@@ -1,7 +1,45 @@
+#Entire directories to ignore
+bin/
+gen/
+tmp/
+.atlas-settings/
+.jatlas-settings/
+
+# Compiled Binaries
+*.com
 *.class
+*.dll
+*.exe
+*.o
+*.so
+*.dex
+*.apk
+*.ap_
+
+#Backup, swap, MacOS dir file, etc.
+*~
+*.lock
+*.DS_Store
+*.swp
+*.out
+*.cache
+Thumbs.db
 
 # Mobile Tools for Java (J2ME)
 .mtj.tmp/
+
+# Eclipse-specific
+*.pydevproject
+.metadata
+*.tmp
+*.bak
+*.swp
+*~.nib
+*.loadpath
+*.cache
+
+#Local configuration file
+local.properties
 
 # Package Files #
 *.jar
