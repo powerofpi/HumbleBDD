@@ -108,10 +108,10 @@ public final class BDDFactory {
 		for(int i : varOrdering){
 			try{
 				if(++counts[i] > 1){
-					throw new BDDException("Same variable " + i + " appeared multiple times in variable ordering!");
+					throw new HumbleException("Same variable " + i + " appeared multiple times in variable ordering!");
 				}
 			}catch(ArrayIndexOutOfBoundsException e){
-				throw new BDDException("Variables in ordering must be 0 to ordering.length - 1. Got " + i, e);
+				throw new HumbleException("Variables in ordering must be 0 to ordering.length - 1. Got " + i, e);
 			}
 		}
 		this.indexToVar = new int[varOrdering.length];
@@ -180,7 +180,7 @@ public final class BDDFactory {
 	 * @return
 	 */
 	public BDD assignment(boolean[] assignment){
-		if(assignment.length != varToIndex.length) throw new BDDException("Assignment length should match the number of variables!");
+		if(assignment.length != varToIndex.length) throw new HumbleException("Assignment length should match the number of variables!");
 		BDD toReturn = assignment[0] ? hiVar(0):loVar(0);
 		for(int i = 1; i < varToIndex.length; i++){
 			toReturn = toReturn.and(assignment[i] ? hiVar(i) : loVar(i));
@@ -203,7 +203,7 @@ public final class BDDFactory {
 	 * @return
 	 */
 	private BDDNode getNode(int var, BDDNode lo, BDDNode hi){
-		if(var < 0 || var >= varToIndex.length) throw new BDDException("No such variable: " + var);
+		if(var < 0 || var >= varToIndex.length) throw new HumbleException("No such variable: " + var);
 		// Optimization for reduce: if lo and hi are the same node, just return that node. 
 		if(lo == hi) return lo;
 		BDDNode key = new BDDNode(var, lo, hi);
@@ -269,9 +269,9 @@ public final class BDDFactory {
 		 */
 		public BDD and(BDD other){
 			// Null check
-			if(other == null) throw new BDDException("other must not be null!", new NullPointerException());
+			if(other == null) throw new HumbleException("other must not be null!", new NullPointerException());
 			// Different factories?
-			if(BDDFactory.this != other.getFactory()) throw new BDDException("BDDs must come from the same factory!");
+			if(BDDFactory.this != other.getFactory()) throw new HumbleException("BDDs must come from the same factory!");
 			// Same BDD?
 			if(ref == other.ref) return other;
 			
@@ -287,9 +287,9 @@ public final class BDDFactory {
 		 */
 		public BDD or(BDD other){
 			// Null check
-			if(other == null) throw new BDDException("other must not be null!", new NullPointerException());
+			if(other == null) throw new HumbleException("other must not be null!", new NullPointerException());
 			// Different factories?
-			if(BDDFactory.this != other.getFactory()) throw new BDDException("BDDs must come from the same factory!");
+			if(BDDFactory.this != other.getFactory()) throw new HumbleException("BDDs must come from the same factory!");
 			// Same BDD?
 			if(ref == other.ref) return other;
 
@@ -305,9 +305,9 @@ public final class BDDFactory {
 		 */
 		public BDD xor(BDD other){
 			// Null check
-			if(other == null) throw new BDDException("other must not be null!", new NullPointerException());
+			if(other == null) throw new HumbleException("other must not be null!", new NullPointerException());
 			// Different factories?
-			if(BDDFactory.this != other.getFactory()) throw new BDDException("BDDs must come from the same factory!");
+			if(BDDFactory.this != other.getFactory()) throw new HumbleException("BDDs must come from the same factory!");
 			// Same BDD?
 			if(ref == other.ref) return LO_BDD;
 			
@@ -360,7 +360,7 @@ public final class BDDFactory {
 							cached = (first == HI ^ second == HI) ? HI : LO;
 							break;
 						default:
-							throw new BDDException("Unknown operator: " + op);
+							throw new HumbleException("Unknown operator: " + op);
 						}
 					}
 					// Second is a non-leaf

@@ -5,21 +5,21 @@ package com.deering.humblebdd;
  * @author tdeering
  *
  */
-public class BDDException extends RuntimeException {
+public class HumbleException extends RuntimeException {
 	private static final long serialVersionUID = -3556271551729696994L;
 
-	public BDDException(){
+	public HumbleException(){
 	}
 	
-	public BDDException(String msg){
+	public HumbleException(String msg){
 		super(msg);
 	}
 	
-	public BDDException(Throwable t){
+	public HumbleException(Throwable t){
 		super(t);
 	}
 	
-	public BDDException(String msg, Throwable t){
+	public HumbleException(String msg, Throwable t){
 		super(msg, t);
 	}
 }
