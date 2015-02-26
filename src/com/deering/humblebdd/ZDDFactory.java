@@ -1,11 +1,9 @@
 package com.deering.humblebdd;
 
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.Stack;
 import java.util.WeakHashMap;
 
 import com.deering.humblebdd.util.MaxSizeHashMap;
@@ -14,9 +12,21 @@ import com.deering.humblebdd.util.MaxSizeHashMap;
  * A factory that wraps a universe graph of shared, reduced, ordered, zero-suppressed ZDDs (ZDDs).
  * Supports up to Integer.MAX_VALUE variables.
  * 
- * USAGE EXAMPLE: TODO
+ * USAGE EXAMPLE:
  * 
+ * // New factory with 4 variables and an operator cache of size 100
+ * ZDDFactory f = new ZDDFactory(new int[]{0,1,2,3}, 100);
  * 
+ * // Create a set of variables
+ * ZDD set1 = f.element(0).union(f.element(2));
+ * 
+ * // Create another set of variables
+ * ZDD set2 = f.element(3).intersection(set1);
+ * 
+ * // Inspect a set
+ * System.out.println(set2);
+ * System.out.println(set2.count());
+ * for(int var : set2) System.out.print(var);
  * 
  * @author tdeering
  *
@@ -33,7 +43,7 @@ public final class ZDDFactory {
 		static final byte UNION = 3;
 		static final byte DIFFERENCE = 4;
 		static final byte INTERSECTION = 5;
-		static final byte CHANGE = 6;
+		static final byte TOGGLE = 6;
 		static final byte COUNT = 7;
 	}
 	
@@ -186,19 +196,12 @@ public final class ZDDFactory {
 	 * 
 	 * Time complexity of operations:
 	 * 
-	 * not(this): O(|this|)
-	 * and(this, other): O(|this|*|other|)
-	 * or(this, other: O(|this|*|other|)
-	 * xor(this, other): O(|this|*|other|)
-	 * isLo(this): O(1)
-	 * isHi(this): O(1)
-	 * satCount(this): O(|this|)
-	 * iteration: O(|this|)
+	 * TODO Document runtime of operations
 	 * 
 	 * @author tdeering
 	 *
 	 */
-	public final class ZDD implements Iterable<boolean[]>{
+	public final class ZDD implements Iterable<Integer>{
 		/**
 		 * Head node of this ZDD in the shared ZDD graph.
 		 */
@@ -271,13 +274,13 @@ public final class ZDDFactory {
 		}
 		
 		/**
-		 * Returns this ZDD with the given variable inverted
+		 * Returns this ZDD with the given variable toggled
 		 * 
 		 * @param var
 		 * @return
 		 */
-		public ZDD change(int var){
-			return apply(Operation.CHANGE, var);
+		public ZDD toggle(int var){
+			return apply(Operation.TOGGLE, var);
 		}
 		
 		/**
@@ -333,7 +336,7 @@ public final class ZDDFactory {
 					else if(first.var == var) cached = first.lo;
 					else cached = getNode(first.var, (ZDDNode) apply(op, first.lo, null, var), (ZDDNode) apply(op, first.hi, null, var)); 
 					break;
-				case Operation.CHANGE:
+				case Operation.TOGGLE:
 					if(ref.var < var) cached = getNode(first.var, LO, first);
 					else if(ref.var == var) return getNode(first.var, first.hi, first.lo);
 					else cached = getNode(op, (ZDDNode) apply(op, first.lo, null, var), (ZDDNode) apply(op, first.hi, null, var));
@@ -364,8 +367,9 @@ public final class ZDDFactory {
 					break;
 				case Operation.COUNT:
 					if(first == LO) cached = 0;
-					else if(first.var == 0) cached = 1;
+					else if(first == HI) cached = 1;
 					else cached = ((Integer) apply(op, first.lo, second, var)) + ((Integer) apply(op, first.hi, second, var));
+					break;
 				default:
 					throw new HumbleException("Unsupported op code: " + op);
 				}
@@ -403,8 +407,8 @@ public final class ZDDFactory {
 		 * NOTE: The returned array is re-used by the iterator for efficiency reasons.
 		 */
 		@Override
-		public Iterator<boolean[]> iterator() {
-			return new ZDDSatIterator();
+		public Iterator<Integer> iterator() {
+			return new ZDDIterator();
 		}
 		
 		@Override
@@ -436,167 +440,29 @@ public final class ZDDFactory {
 		 * @author tdeering
 		 *
 		 */
-		private class ZDDSatIterator implements Iterator<boolean[]>{
-			private static final byte UNVISITED = 1;
-			private static final byte VISITED_LO = 2;
-			private static final byte VISITED_HI = 3;
-			boolean[] solution, nextSolution;
+		private final class ZDDIterator implements Iterator<Integer>{
+			ZDDNode cur;
 			
-			/**
-			 * Used to carry out a DFS over satisfying solutions
-			 */
-			Stack<IterNode> stack;
-			
-			/**
-			 *  Current location in the DFS
-			 */
-			IterNode dfsLocation;
-			
-			public ZDDSatIterator(){
-				// The constant LO zdd has no satisfying solutions, nothing to do
-				if(ref != LO){
-					stack = new Stack<IterNode>();
-					solution = new boolean[varToIndex.length];
-					nextSolution = new boolean[varToIndex.length];
-					if(ref == HI || indexToVar[0] != ref.var){
-						dfsLocation = new IterNode(indexToVar[0], ref, ref);
-					}else{
-						dfsLocation = new IterNode(indexToVar[0], ref.lo, ref.hi);
-					}
-					
-					stack.push(dfsLocation);
-					findNextSolution();
-				}
+			public ZDDIterator(){
+				cur = ref;
 			}
 			
 			@Override
 			public boolean hasNext() {
-				return dfsLocation != null;
+				return cur != LO;
 			}
 
 			@Override
-			public boolean[] next() {
-				if(dfsLocation == null) throw new NoSuchElementException("No more satisfying solutions!");
-				
-				for(int i = 0; i < solution.length; ++i) solution[i] = nextSolution[i];
-				findNextSolution();
-				
-				return solution;
-			}
-			
-			private void findNextSolution(){
-				if(stack.isEmpty()){
-					dfsLocation = null;
-				}else{
-					dfsLocation = stack.pop();
-					
-					while(dfsLocation.var >= 0){
-						// Lo is non-null and unvisited in the current stack
-						if(dfsLocation.lo != null && dfsLocation.lo.visitStatus == UNVISITED){
-							nextSolution[dfsLocation.var] = false;
-							dfsLocation.lo.visitStatus = VISITED_LO;
-							stack.push(dfsLocation);
-							dfsLocation = dfsLocation.lo;
-						}
-						// Hi is non-null and unvisited in the current stack
-						else if(dfsLocation.hi != null && dfsLocation.hi.visitStatus != VISITED_HI){
-							nextSolution[dfsLocation.var] = true;
-							dfsLocation.hi.visitStatus = VISITED_HI;
-							stack.push(dfsLocation);
-							dfsLocation = dfsLocation.hi;
-						}
-						// No more children to visit. Go back to parent
-						else{
-							if(dfsLocation.lo != null) dfsLocation.lo.visitStatus = UNVISITED;
-							if(dfsLocation.hi != null) dfsLocation.hi.visitStatus = UNVISITED;
-							if(stack.isEmpty()){
-								dfsLocation = null;
-								break;
-							}else{
-								dfsLocation = stack.pop();
-							}
-						}
-					}
-				}
+			public Integer next() {
+				if(cur == LO) throw new NoSuchElementException();
+				int ret = cur.var;
+				cur = cur.lo;
+				return ret;
 			}
 
 			@Override
 			public void remove() {
 				throw new UnsupportedOperationException("Operation remove() is not supported!");
-			}
-			
-			/**
-			 * Node for iterating over satisfying solutions in variable order. Used to account for the fact that we
-			 * may have "don't care" variables.
-			 * 
-			 * Invariant: 
-			 * @author tdeering
-			 *
-			 */
-			private class IterNode{
-				int var;
-				byte visitStatus = UNVISITED;
-				IterNode lo, hi;
-
-				public IterNode(int var, ZDDNode lo, ZDDNode hi){
-					this.var = var;
-					// Non-leaf
-					if(var >= 0){
-						// Index of the variable that follows this one in the ordering
-						int nextIdx = varToIndex[var] + 1;
-						
-						// If there is a successor in the ordering
-						if(nextIdx < varToIndex.length){
-							// Find it
-							int nextVar = indexToVar[nextIdx];
-							
-							// Do not create paths to lo
-							if(lo != LO){
-								// If the lo successor is that variable, then accept it as-is
-								if(lo.var == nextVar){
-									this.lo = new IterNode(nextVar, lo.lo, lo.hi);
-								}
-								// Else create a dummy successor for this variable representing a "don't care" value
-								else{
-									this.lo = new IterNode(nextVar, lo, lo);
-								}
-							}
-							
-							// Do not create paths to lo
-							if(hi != LO){
-								// If the two successors are the same (this is a dummy successor), then don't duplicate stack nodes
-								if(lo == hi){
-									this.hi = this.lo;
-								}else{
-									// If the hi successor is that variable, then accept it as-is
-									if(hi.var == nextVar){
-										this.hi = new IterNode(nextVar, hi.lo, hi.hi);
-									}
-									// Else create a dummy successor for this variable representing a "don't care" value
-									else{
-										this.hi = new IterNode(nextVar, hi, hi);
-									}
-								}
-							}
-						}
-						// Terminal nodes
-						else{
-							// Do not create paths to lo
-							if(lo == HI){
-								this.lo = new IterNode(-1, null, null);
-							}
-							// Do not create paths to lo
-							if(hi == HI){
-								// If both successors are hi, just point to the same one as lo
-								if(this.lo != null){
-									this.hi = this.lo;
-								}else{
-									this.hi = new IterNode(-1, null, null);
-								}
-							}
-						}
-					}
-				}
 			}
 		}
 	}
