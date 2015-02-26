@@ -1,7 +1,6 @@
 package com.deering.humblebdd;
 
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -36,11 +35,12 @@ public final class BDDFactory {
 	 * @author tdeering
 	 *
 	 */
-	public static interface Operation{
+	private static interface Operation{
 		static final byte NOT = 1;
 		static final byte AND = 2;
 		static final byte OR = 3;
 		static final byte XOR = 4;
+		static final byte COUNT = 5;
 	}
 	
 	/**
@@ -86,12 +86,7 @@ public final class BDDFactory {
 	/**
 	 * Cache of BDD operation results
 	 */
-	private Map<BDDOp, BDDNode> opCache;
-	
-	/**
-	 * Used by BDD.satCount to memoize partial recursive solutions so as to avoid rework.
-	 */
-	private Map<BDDNode, Integer> satCountCache;
+	private Map<BDDOp, Object> opCache;
 	
 	/**
 	 * Constructs a new BDDFactory with the given zero-indexed variables the given order. For example:
@@ -99,6 +94,9 @@ public final class BDDFactory {
 	 * varOrdering = new int{1,0,2,3};
 	 * 
 	 * Specifies a factory with 4 variables, ordered 1, 0, 2, 3.
+	 * 
+	 * The operator cache is used to memoize the results of the last operatorCacheSize operations. Larger
+	 * caches may result in more memory use, but substantial speedups.
 	 * 
 	 * @param numVars
 	 * @param varOrdering
@@ -126,8 +124,7 @@ public final class BDDFactory {
 		this.HI = new BDDNode(-1, null, null);
 		this.HI_BDD = new BDD(HI);
 		this.bddNodes = new WeakHashMap<BDDNode, BDDNode>();
-		satCountCache = new HashMap<BDDNode, Integer>();
-		this.opCache = new MaxSizeHashMap<BDDOp, BDDNode>(operatorCacheSize);
+		this.opCache = new MaxSizeHashMap<BDDOp, Object>(operatorCacheSize);
 	}
 	
 	/**
@@ -204,9 +201,10 @@ public final class BDDFactory {
 	 */
 	private BDDNode getNode(int var, BDDNode lo, BDDNode hi){
 		if(var < 0 || var >= varToIndex.length) throw new HumbleException("No such variable: " + var);
-		// Optimization for reduce: if lo and hi are the same node, just return that node. 
+		// Node elimination
 		if(lo == hi) return lo;
 		BDDNode key = new BDDNode(var, lo, hi);
+		// Node sharing
 		BDDNode sharedNode = bddNodes.get(key);
 		if(sharedNode == null){
 			sharedNode = key;
@@ -268,13 +266,8 @@ public final class BDDFactory {
 		 * @return
 		 */
 		public BDD and(BDD other){
-			// Null check
-			if(other == null) throw new HumbleException("other must not be null!", new NullPointerException());
-			// Different factories?
-			if(BDDFactory.this != other.getFactory()) throw new HumbleException("BDDs must come from the same factory!");
 			// Same BDD?
 			if(ref == other.ref) return other;
-			
 			return apply(Operation.AND, other);
 		}
 		
@@ -286,13 +279,8 @@ public final class BDDFactory {
 		 * @return
 		 */
 		public BDD or(BDD other){
-			// Null check
-			if(other == null) throw new HumbleException("other must not be null!", new NullPointerException());
-			// Different factories?
-			if(BDDFactory.this != other.getFactory()) throw new HumbleException("BDDs must come from the same factory!");
 			// Same BDD?
 			if(ref == other.ref) return other;
-
 			return apply(Operation.OR, other);
 		}
 		
@@ -304,13 +292,8 @@ public final class BDDFactory {
 		 * @return
 		 */
 		public BDD xor(BDD other){
-			// Null check
-			if(other == null) throw new HumbleException("other must not be null!", new NullPointerException());
-			// Different factories?
-			if(BDDFactory.this != other.getFactory()) throw new HumbleException("BDDs must come from the same factory!");
 			// Same BDD?
 			if(ref == other.ref) return LO_BDD;
-			
 			return apply(Operation.XOR, other);
 		}
 		
@@ -323,8 +306,12 @@ public final class BDDFactory {
 		 * @param other
 		 * @return
 		 */
-		public BDD apply(byte op, BDD other){
-			BDDNode applied = apply(op, ref, other == null ? null:other.ref);
+		private BDD apply(byte op, BDD other){
+			// Null check
+			if(other == null) throw new HumbleException("other must not be null!", new NullPointerException());
+			// Different factories?
+			if(BDDFactory.this != other.getFactory()) throw new HumbleException("BDDs must come from the same factory!");
+			BDDNode applied = (BDDNode) apply(op, ref, other == null ? null:other.ref);
 			if(applied == ref) return this;
 			else if(other != null && applied == other.ref) return other;
 			return new BDD(applied);
@@ -338,9 +325,9 @@ public final class BDDFactory {
 		 * @param second
 		 * @return
 		 */
-		private BDDNode apply(byte op, BDDNode first, BDDNode second){
+		private Object apply(byte op, BDDNode first, BDDNode second){
 			BDDOp key = new BDDOp(op, first, second);
-			BDDNode cached = (BDDNode) opCache.get(key);
+			Object cached = opCache.get(key);
 			if(cached == null){
 				// First is a leaf node
 				if(first.lo == null){
@@ -359,29 +346,40 @@ public final class BDDFactory {
 						case Operation.XOR:
 							cached = (first == HI ^ second == HI) ? HI : LO;
 							break;
+						case Operation.COUNT:
+							cached = first == HI ? 1 : 0;
+							break;
 						default:
 							throw new HumbleException("Unknown operator: " + op);
 						}
 					}
 					// Second is a non-leaf
 					else if(second != null){
-						cached = getNode(second.var, apply(op, first, second.lo), apply(op, first, second.hi));
+						cached = getNode(second.var, (BDDNode) apply(op, first, second.lo), (BDDNode) apply(op, first, second.hi));
 					}			
 				}
 				// First not a leaf, but second is a leaf
 				else if(second != null && second.lo == null){	
-					cached = getNode(first.var, apply(op, first.lo, second), apply(op, first.hi, second));
+					cached = getNode(first.var, (BDDNode) apply(op, first.lo, second), (BDDNode) apply(op, first.hi, second));
 				}
 				// Neither first nor second is a leaf node
 				else{
 					if(second == null){
-						cached = getNode(first.var, apply(op, first.lo, null), apply(op, first.hi, null));
+						if(op == Operation.COUNT){
+							int sub1 = (Integer) apply(op, first.lo, null);
+							int sub2 = (Integer) apply(op, first.hi, null);
+							int shift1 = (first.lo.lo == null ? varToIndex.length : varToIndex[first.lo.var]) - varToIndex[first.var] - 1;
+							int shift2 = (first.hi.lo == null ? varToIndex.length : varToIndex[first.hi.var]) - varToIndex[first.var] - 1;
+							cached = (sub1 << shift1) + (sub2 << shift2);
+						}else{
+							cached = getNode(first.var, (BDDNode) apply(op, first.lo, null), (BDDNode) apply(op, first.hi, null));
+						}
 					}else if(first.var == second.var){
-						cached = getNode(first.var, apply(op, first.lo, second.lo), apply(op, first.hi, second.hi));
+						cached = getNode(first.var, (BDDNode) apply(op, first.lo, second.lo), (BDDNode) apply(op, first.hi, second.hi));
 					}else if(varToIndex[first.var] < varToIndex[second.var]){
-						cached = getNode(first.var, apply(op, first.lo, second), apply(op, first.hi, second));
+						cached = getNode(first.var, (BDDNode) apply(op, first.lo, second), (BDDNode) apply(op, first.hi, second));
 					}else{
-						cached = getNode(second.var, apply(op, first, second.lo), apply(op, first, second.hi));
+						cached = getNode(second.var, (BDDNode) apply(op, first, second.lo), (BDDNode) apply(op, first, second.hi));
 					}
 				}
 				opCache.put(key, cached);
@@ -417,36 +415,7 @@ public final class BDDFactory {
 		 * @return
 		 */
 		public int satCount(){
-			// Invariant: cache is empty
-			int res = satCount(-1, ref);
-			satCountCache.clear();
-			return res;
-		}
-		
-		/**
-		 * Recursively returns the number of satisfying (paths to HI) from the current node.
-		 * 
-		 * @param current
-		 * @return
-		 */
-		private int satCount(int lastVar, BDDNode current){
-			// Non-leaf. First case here for speed.
-			if(current.lo != null){
-				// Power of two multiplier for "don't care" variables
-				int skipped = lastVar == -1 ? varToIndex[current.var] : varToIndex[current.var] - varToIndex[lastVar] - 1;
-				Integer memoized = (Integer) satCountCache.get(current);
-				if(memoized == null){
-					memoized = satCount(current.var, current.lo) + satCount(current.var, current.hi);
-					satCountCache.put(current, memoized);
-				}
-				return memoized << skipped;
-			}else if(current == HI){
-				// Power of two multiplier for "don't care" variables
-				int skipped = lastVar == -1 ? indexToVar.length : indexToVar.length - varToIndex[lastVar] - 1;
-				return 1 << skipped;
-			}else{
-				return 0;
-			}
+			return (int) apply(Operation.COUNT, ref, null) << varToIndex[ref.var];
 		}
 		
 		/**
@@ -735,7 +704,7 @@ public final class BDDFactory {
 		}
 		@Override
 		public int hashCode() {
-			return op + a.hashCode() + (b == null ? 0:b.hashCode());
+			return LARGE_PRIMES[0] * op + a.hashCode() + (b == null ? 0:b.hashCode());
 		}
 		@Override
 		public boolean equals(Object obj) {

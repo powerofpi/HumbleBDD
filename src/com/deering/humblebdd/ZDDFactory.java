@@ -14,33 +14,27 @@ import com.deering.humblebdd.util.MaxSizeHashMap;
  * A factory that wraps a universe graph of shared, reduced, ordered, zero-suppressed ZDDs (ZDDs).
  * Supports up to Integer.MAX_VALUE variables.
  * 
- * USAGE EXAMPLE:
+ * USAGE EXAMPLE: TODO
  * 
- * // New factory with 4 variables and an operator cache of size 10
- * ZDDFactory f = new ZDDFactory(new int[]{2,1,3,0}, 10);
  * 
- * // Build some boolean expression out of the variables 
- * ZDD complexZDD = f.hiVar(0).and(f.lowVar(1)).xor(f.hiVar(2));
- * 
- * // Do something with the solutions
- * for(boolean[] solution : complexZDD){
- * 	 System.out.println(Arrays.toString(solution));
- * }
  * 
  * @author tdeering
  *
  */
 public final class ZDDFactory {
 	/**
-	 * Op codes for ZDD operations.
+	 * Op codes for BDD operations.
 	 * @author tdeering
 	 *
 	 */
 	public static interface Operation{
-		static final byte NOT = 1;
-		static final byte AND = 2;
-		static final byte OR = 3;
-		static final byte XOR = 4;
+		static final byte SUBSET_HI = 1;
+		static final byte SUBSET_LO = 2;
+		static final byte UNION = 3;
+		static final byte DIFFERENCE = 4;
+		static final byte INTERSECTION = 5;
+		static final byte CHANGE = 6;
+		static final byte COUNT = 7;
 	}
 	
 	/**
@@ -64,11 +58,6 @@ public final class ZDDFactory {
 	private ZDD LO_ZDD;
 	
 	/**
-	 * ZDD wrapping HI.
-	 */
-	private ZDD HI_ZDD;
-	
-	/**
 	 * Maps from variables to ordering indices.
 	 */
 	private int[] varToIndex;
@@ -86,12 +75,7 @@ public final class ZDDFactory {
 	/**
 	 * Cache of ZDD operation results
 	 */
-	private Map<ZDDOp, ZDDNode> opCache;
-	
-	/**
-	 * Used by ZDD.satCount to memoize partial recursive solutions so as to avoid rework.
-	 */
-	private Map<ZDDNode, Integer> satCountCache;
+	private Map<ZDDOp, Object> opCache;
 	
 	/**
 	 * Constructs a new ZDDFactory with the given zero-indexed variables the given order. For example:
@@ -99,6 +83,9 @@ public final class ZDDFactory {
 	 * varOrdering = new int{1,0,2,3};
 	 * 
 	 * Specifies a factory with 4 variables, ordered 1, 0, 2, 3.
+	 * 
+	 * The operator cache is used to memoize the results of the last operatorCacheSize operations. Larger
+	 * caches may result in more memory use, but substantial speedups.
 	 * 
 	 * @param numVars
 	 * @param varOrdering
@@ -124,14 +111,13 @@ public final class ZDDFactory {
 		this.LO = new ZDDNode(-1, null, null);
 		this.LO_ZDD = new ZDD(LO);
 		this.HI = new ZDDNode(-1, null, null);
-		this.HI_ZDD = new ZDD(HI);
 		this.zddNodes = new WeakHashMap<ZDDNode, ZDDNode>();
-		satCountCache = new HashMap<ZDDNode, Integer>();
-		this.opCache = new MaxSizeHashMap<ZDDOp, ZDDNode>(operatorCacheSize);
+		this.opCache = new MaxSizeHashMap<ZDDOp, Object>(operatorCacheSize);
 	}
 	
 	/**
 	 * Returns the current variable ordering.
+	 * 
 	 * @return
 	 */
 	public int[] getOrdering(){
@@ -139,53 +125,32 @@ public final class ZDDFactory {
 	}
 	
 	/**
-	 * Return the ZDD corresponding to the boolean constant "false"
+	 * Return the empty ZDD
+	 * 
 	 * @return
 	 */
-	public ZDD lo(){
+	public ZDD empty(){
 		return LO_ZDD;
 	}
-	
+
 	/**
-	 * Return the ZDD corresponding to the boolean constant "true"
-	 * @return
-	 */
-	public ZDD hi(){
-		return HI_ZDD;
-	}
-	
-	/**
-	 * Return the ZDD corresponding to the single-variable formula "var"
+	 * Return the ZDD containing only element var
+	 * 
 	 * @param var
 	 * @return
 	 */
-	public ZDD hiVar(int var){
+	public ZDD element(int var){
+		if(var < 0 || var >= varToIndex.length) throw new HumbleException("No such variable: " + var);
 		return new ZDD(getNode(var, LO, HI));
 	}
-	
+
 	/**
-	 * Return the ZDD corresponding to the single-variable formula "NOT(var)"
-	 * @param var
-	 * @return
-	 */
-	public ZDD loVar(int var){
-		return new ZDD(getNode(var, HI, LO));
-	}
-	
-	/**
-	 * Return the ZDD corresponding to the formula where each variable takes the
-	 * value given in the assignment. 
+	 * Return the ZDD containing only element 0
 	 * 
-	 * @param assignment
 	 * @return
 	 */
-	public ZDD assignment(boolean[] assignment){
-		if(assignment.length != varToIndex.length) throw new HumbleException("Assignment length should match the number of variables!");
-		ZDD toReturn = assignment[0] ? hiVar(0):loVar(0);
-		for(int i = 1; i < varToIndex.length; i++){
-			toReturn = toReturn.and(assignment[i] ? hiVar(i) : loVar(i));
-		}
-		return toReturn;
+	public ZDD base(){
+		return element(0);
 	}
 	
 	/**
@@ -204,9 +169,10 @@ public final class ZDDFactory {
 	 */
 	private ZDDNode getNode(int var, ZDDNode lo, ZDDNode hi){
 		if(var < 0 || var >= varToIndex.length) throw new HumbleException("No such variable: " + var);
-		// Optimization for reduce: if lo and hi are the same node, just return that node. 
-		if(lo == hi) return lo;
+		// Node elimination
+		if(LO == hi) return lo;
 		ZDDNode key = new ZDDNode(var, lo, hi);
+		// Node sharing
 		ZDDNode sharedNode = zddNodes.get(key);
 		if(sharedNode == null){
 			sharedNode = key;
@@ -250,203 +216,171 @@ public final class ZDDFactory {
 		}
 		
 		/**
-		 * Return the logical NOT of this ZDD
-		 * 
-		 * Time complexity: O(|this|)
-		 * 
-		 * @return
-		 */
-		public ZDD not(){
-			return apply(Operation.NOT, null);
-		}
-		
-		/**
-		 * Return the logical AND of this ZDD with the other ZDD
-		 * 
-		 * Time complexity: O(|this| * |other|)
-		 * 
-		 * @return
-		 */
-		public ZDD and(ZDD other){
-			// Null check
-			if(other == null) throw new HumbleException("other must not be null!", new NullPointerException());
-			// Different factories?
-			if(ZDDFactory.this != other.getFactory()) throw new HumbleException("ZDDs must come from the same factory!");
-			// Same ZDD?
-			if(ref == other.ref) return other;
-			
-			return apply(Operation.AND, other);
-		}
-		
-		/**
-		 * Return the logical OR of this ZDD with the other ZDD
-		 * 
-		 * Time complexity: O(|this| * |other|)
-		 * 
-		 * @return
-		 */
-		public ZDD or(ZDD other){
-			// Null check
-			if(other == null) throw new HumbleException("other must not be null!", new NullPointerException());
-			// Different factories?
-			if(ZDDFactory.this != other.getFactory()) throw new HumbleException("ZDDs must come from the same factory!");
-			// Same ZDD?
-			if(ref == other.ref) return other;
-
-			return apply(Operation.OR, other);
-		}
-		
-		/**
-		 * Return the logical XOR of this ZDD with the other ZDD
-		 * 
-		 * Time complexity: O(|this| * |other|)
-		 * 
-		 * @return
-		 */
-		public ZDD xor(ZDD other){
-			// Null check
-			if(other == null) throw new HumbleException("other must not be null!", new NullPointerException());
-			// Different factories?
-			if(ZDDFactory.this != other.getFactory()) throw new HumbleException("ZDDs must come from the same factory!");
-			// Same ZDD?
-			if(ref == other.ref) return LO_ZDD;
-			
-			return apply(Operation.XOR, other);
-		}
-		
-		/**
-		 * Applies the given operation to this and the given ZDD.
-		 * 
-		 * Time complexity: O(|this| * |other|)
+		 * Applies the given operation between this ZDD and the other.
 		 * 
 		 * @param op
 		 * @param other
 		 * @return
 		 */
-		public ZDD apply(byte op, ZDD other){
-			ZDDNode applied = apply(op, ref, other == null ? null:other.ref);
+		private ZDD apply(byte op, ZDD other){
+			// Null check
+			if(other == null) throw new HumbleException("Other cannot be null!", new NullPointerException());
+			// Different factories?
+			if(ZDDFactory.this != other.getFactory()) throw new HumbleException("ZDDs must come from the same factory!");
+			ZDDNode applied = (ZDDNode) apply(op, ref, other.ref, -1);
 			if(applied == ref) return this;
-			else if(other != null && applied == other.ref) return other;
+			else if(applied == other.ref) return other;
 			return new ZDD(applied);
 		}
 		
 		/**
-		 * Applies the given operation to the given ZDD nodes.
+		 * Applies the given operation on this ZDD.
 		 * 
+		 * @param op
+		 * @param other
+		 * @return
+		 */
+		private ZDD apply(byte op, int var){
+			// Nonsensical-variable check
+			if(var < 0 || var >= varToIndex.length) throw new HumbleException("No such variable: " + var);
+			ZDDNode applied = (ZDDNode) apply(op, ref, null, var);
+			if(applied == ref) return this;
+			return new ZDD(applied);
+		}
+		
+		/**
+		 * Returns the subset of variables >= the given var
+		 * 
+		 * @param zdd
+		 * @param var
+		 * @return
+		 */
+		public ZDD subsetHi(int var){
+			return apply(Operation.SUBSET_HI, var);
+		}
+		
+		/**
+		 * Returns the subset of variables <= the given var
+		 * 
+		 * @param zdd
+		 * @param var
+		 * @return
+		 */
+		public ZDD subsetLo(int var){
+			return apply(Operation.SUBSET_LO, var);
+		}
+		
+		/**
+		 * Returns this ZDD with the given variable inverted
+		 * 
+		 * @param var
+		 * @return
+		 */
+		public ZDD change(int var){
+			return apply(Operation.CHANGE, var);
+		}
+		
+		/**
+		 * Returns the union of this ZDD and the other ZDD
+		 * 
+		 * @param other
+		 * @return
+		 */
+		public ZDD union(ZDD other){
+			return apply(Operation.UNION, other);
+		}
+		
+		/**
+		 * Returns the intersection of this ZDD and the other ZDD
+		 * 
+		 * @param other
+		 * @return
+		 */
+		public ZDD intersection(ZDD other){
+			return apply(Operation.INTERSECTION, other);
+		}
+		
+		/**
+		 * Returns the difference of this ZDD and the other ZDD
+		 * 
+		 * @param other
+		 * @return
+		 */
+		public ZDD difference(ZDD other){
+			return apply(Operation.DIFFERENCE, other);
+		}
+		
+		/**
+		 * Apply the requested operation inductively, first consulting the operator cache
 		 * @param op
 		 * @param first
 		 * @param second
+		 * @param var
 		 * @return
 		 */
-		private ZDDNode apply(byte op, ZDDNode first, ZDDNode second){
-			ZDDOp key = new ZDDOp(op, first, second);
-			ZDDNode cached = (ZDDNode) opCache.get(key);
+		private Object apply(byte op, ZDDNode first, ZDDNode second, int var){
+			ZDDOp key = new ZDDOp(op, first, second, var);
+			Object cached = opCache.get(key);
 			if(cached == null){
-				// First is a leaf node
-				if(first.lo == null){
-					// Second is also a leaf node
-					if(second == null || second.lo == null){
-						switch(op){
-						case Operation.NOT:
-							cached = (first == HI) ? LO : HI;
-							break;
-						case Operation.AND:
-							cached = (first == HI && second == HI) ? HI : LO;
-							break;
-						case Operation.OR:
-							cached = (first == HI || second == HI) ? HI : LO;
-							break;
-						case Operation.XOR:
-							cached = (first == HI ^ second == HI) ? HI : LO;
-							break;
-						default:
-							throw new HumbleException("Unknown operator: " + op);
-						}
-					}
-					// Second is a non-leaf
-					else if(second != null){
-						cached = getNode(second.var, apply(op, first, second.lo), apply(op, first, second.hi));
-					}			
-				}
-				// First not a leaf, but second is a leaf
-				else if(second != null && second.lo == null){	
-					cached = getNode(first.var, apply(op, first.lo, second), apply(op, first.hi, second));
-				}
-				// Neither first nor second is a leaf node
-				else{
-					if(second == null){
-						cached = getNode(first.var, apply(op, first.lo, null), apply(op, first.hi, null));
-					}else if(first.var == second.var){
-						cached = getNode(first.var, apply(op, first.lo, second.lo), apply(op, first.hi, second.hi));
-					}else if(varToIndex[first.var] < varToIndex[second.var]){
-						cached = getNode(first.var, apply(op, first.lo, second), apply(op, first.hi, second));
-					}else{
-						cached = getNode(second.var, apply(op, first, second.lo), apply(op, first, second.hi));
-					}
+				switch(op){
+				case Operation.SUBSET_HI:
+					if(first.var < var) cached = LO;
+					else if(first.var == var) cached = ref.hi;
+					else cached = getNode(first.var, (ZDDNode) apply(op, first.lo, null, var), (ZDDNode) apply(op, first.hi, null, var));
+					break;
+				case Operation.SUBSET_LO:
+					if(first.var < var) cached = first;
+					else if(first.var == var) cached = first.lo;
+					else cached = getNode(first.var, (ZDDNode) apply(op, first.lo, null, var), (ZDDNode) apply(op, first.hi, null, var)); 
+					break;
+				case Operation.CHANGE:
+					if(ref.var < var) cached = getNode(first.var, LO, first);
+					else if(ref.var == var) return getNode(first.var, first.hi, first.lo);
+					else cached = getNode(op, (ZDDNode) apply(op, first.lo, null, var), (ZDDNode) apply(op, first.hi, null, var));
+					break;
+				case Operation.UNION:
+					if(first == LO) cached = second;
+					else if(second == LO) cached = first;
+					else if(first == second) cached = first;
+					else if(first.var > second.var) cached = getNode(first.var, (ZDDNode) apply(op, first.lo, second, var), first.hi);
+					else if(first.var < second.var) cached = getNode(second.var, (ZDDNode) apply(op, first, second.lo, var), second.hi);
+					else cached = getNode(first.var, (ZDDNode) apply(op, first.lo, second.lo, var), (ZDDNode) apply(op, first.hi, second.hi, var));
+					break;
+				case Operation.INTERSECTION:
+					if(first == LO) cached = LO;
+					else if(second == LO) cached = LO;
+					else if(first == second) cached = first;
+					else if(first.var > second.var) cached = apply(op, first.lo, second, var);
+					else if(first.var < second.var) cached = apply(op, first, second.lo, var);
+					else cached = getNode(first.var, (ZDDNode) apply(op, first.lo, second.lo, var), (ZDDNode) apply(op, first.hi, second.hi, var));
+					break;
+				case Operation.DIFFERENCE:
+					if(first == LO) cached = LO;
+					else if(second == LO) cached = first;
+					else if(first == second) cached = LO;
+					else if(first.var > second.var) cached = getNode(first.var, (ZDDNode) apply(op, first.lo, second, var), first.hi);
+					else if(first.var < second.var) cached = apply(op, first, second.lo, var);
+					else cached = getNode(first.var, (ZDDNode) apply(op, first.lo, second.lo, var), (ZDDNode) apply(op, first.hi, second.hi, var));
+					break;
+				case Operation.COUNT:
+					if(first == LO) cached = 0;
+					else if(first.var == 0) cached = 1;
+					else cached = ((Integer) apply(op, first.lo, second, var)) + ((Integer) apply(op, first.hi, second, var));
+				default:
+					throw new HumbleException("Unsupported op code: " + op);
 				}
 				opCache.put(key, cached);
 			}
-			
 			return cached;
-		}
-		
-		/**
-		 * Returns whether this ZDD represents the logical constant "false"
-		 * 
-		 * Time complexity: O(1)
-		 * @return
-		 */
-		public boolean isLo(){
-			return ref == LO;
 		}
 
 		/**
-		 * Returns whether this ZDD represents the logical constant "true"
+		 * Returns the number of variables in this ZDD
 		 * 
-		 * Time complexity: O(1)
 		 * @return
 		 */
-		public boolean isHi(){
-			return ref == HI;
-		}
-		
-		/**
-		 * Returns the number of satisfying solutions to this ZDD.
-		 * 
-		 * Time complexity: O(log(|this ZDD|))
-		 * @return
-		 */
-		public int satCount(){
-			// Invariant: cache is empty
-			int res = satCount(-1, ref);
-			satCountCache.clear();
-			return res;
-		}
-		
-		/**
-		 * Recursively returns the number of satisfying (paths to HI) from the current node.
-		 * 
-		 * @param current
-		 * @return
-		 */
-		private int satCount(int lastVar, ZDDNode current){
-			// Non-leaf. First case here for speed.
-			if(current.lo != null){
-				// Power of two multiplier for "don't care" variables
-				int skipped = lastVar == -1 ? varToIndex[current.var] : varToIndex[current.var] - varToIndex[lastVar] - 1;
-				Integer memoized = (Integer) satCountCache.get(current);
-				if(memoized == null){
-					memoized = satCount(current.var, current.lo) + satCount(current.var, current.hi);
-					satCountCache.put(current, memoized);
-				}
-				return memoized << skipped;
-			}else if(current == HI){
-				// Power of two multiplier for "don't care" variables
-				int skipped = lastVar == -1 ? indexToVar.length : indexToVar.length - varToIndex[lastVar] - 1;
-				return 1 << skipped;
-			}else{
-				return 0;
-			}
+		public int count(){
+			return (Integer) apply(Operation.COUNT, ref, null, -1);
 		}
 		
 		/**
@@ -728,14 +662,16 @@ public final class ZDDFactory {
 	private final class ZDDOp{
 		byte op;
 		ZDDNode a, b;
-		public ZDDOp(byte op, ZDDNode a, ZDDNode b){
+		int var;
+		public ZDDOp(byte op, ZDDNode a, ZDDNode b, int var){
 			this.op = op;
 			this.a = a;
 			this.b = b;
+			this.var = var;
 		}
 		@Override
 		public int hashCode() {
-			return op + a.hashCode() + (b == null ? 0:b.hashCode());
+			return (op * LARGE_PRIMES[0]) + a.hashCode() + (b == null ? 0:b.hashCode()) + (var * LARGE_PRIMES[1]);
 		}
 		@Override
 		public boolean equals(Object obj) {
@@ -750,8 +686,12 @@ public final class ZDDFactory {
 				return false;
 			if(op != other.op)
 				return false;
-			return (a == other.a && b == other.b) ||
-				   (a == other.b && b == other.a);
+			if(var != other.var)
+				return false;
+			if(a == other.a && b == other.b)
+				return true;
+			// Operand order matters only for difference operation
+			return op != Operation.DIFFERENCE && a == other.b && b == other.a;
 		}
 		
 		public ZDDFactory getOuterType(){
