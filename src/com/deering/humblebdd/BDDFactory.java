@@ -71,12 +71,12 @@ public final class BDDFactory {
 	/**
 	 * Maps from variables to ordering indices.
 	 */
-	private int[] varToIndex;
+	private int[] v2i;
 	
 	/**
 	 * Maps from ordering indices to variables.
 	 */
-	private int[] indexToVar;
+	private int[] i2v;
 
 	/**
 	 * Nodes of the shared graph.
@@ -112,11 +112,11 @@ public final class BDDFactory {
 				throw new HumbleException("Variables in ordering must be 0 to ordering.length - 1. Got " + i, e);
 			}
 		}
-		this.indexToVar = new int[varOrdering.length];
-		this.varToIndex = new int[varOrdering.length];
+		this.i2v = new int[varOrdering.length];
+		this.v2i = new int[varOrdering.length];
 		for(int i=0; i < varOrdering.length; i++){
-			indexToVar[i] = varOrdering[i];
-			varToIndex[indexToVar[i]] = i;
+			i2v[i] = varOrdering[i];
+			v2i[i2v[i]] = i;
 		}
 		
 		this.LO = new BDDNode(-1, null, null);
@@ -132,7 +132,7 @@ public final class BDDFactory {
 	 * @return
 	 */
 	public int[] getOrdering(){
-		return Arrays.copyOf(varToIndex, varToIndex.length);
+		return Arrays.copyOf(v2i, v2i.length);
 	}
 	
 	/**
@@ -177,9 +177,9 @@ public final class BDDFactory {
 	 * @return
 	 */
 	public BDD assignment(boolean[] assignment){
-		if(assignment.length != varToIndex.length) throw new HumbleException("Assignment length should match the number of variables!");
+		if(assignment.length != v2i.length) throw new HumbleException("Assignment length should match the number of variables!");
 		BDD toReturn = assignment[0] ? hiVar(0):loVar(0);
-		for(int i = 1; i < varToIndex.length; i++){
+		for(int i = 1; i < v2i.length; i++){
 			toReturn = toReturn.and(assignment[i] ? hiVar(i) : loVar(i));
 		}
 		return toReturn;
@@ -200,7 +200,7 @@ public final class BDDFactory {
 	 * @return
 	 */
 	private BDDNode getNode(int var, BDDNode lo, BDDNode hi){
-		if(var < 0 || var >= varToIndex.length) throw new HumbleException("No such variable: " + var);
+		if(var < 0 || var >= v2i.length) throw new HumbleException("No such variable: " + var);
 		// Node elimination
 		if(lo == hi) return lo;
 		BDDNode key = new BDDNode(var, lo, hi);
@@ -368,15 +368,15 @@ public final class BDDFactory {
 						if(op == Operation.COUNT){
 							int sub1 = (Integer) apply(op, first.lo, null);
 							int sub2 = (Integer) apply(op, first.hi, null);
-							int shift1 = (first.lo.lo == null ? varToIndex.length : varToIndex[first.lo.var]) - varToIndex[first.var] - 1;
-							int shift2 = (first.hi.lo == null ? varToIndex.length : varToIndex[first.hi.var]) - varToIndex[first.var] - 1;
+							int shift1 = (first.lo.lo == null ? v2i.length : v2i[first.lo.var]) - v2i[first.var] - 1;
+							int shift2 = (first.hi.lo == null ? v2i.length : v2i[first.hi.var]) - v2i[first.var] - 1;
 							cached = (sub1 << shift1) + (sub2 << shift2);
 						}else{
 							cached = getNode(first.var, (BDDNode) apply(op, first.lo, null), (BDDNode) apply(op, first.hi, null));
 						}
 					}else if(first.var == second.var){
 						cached = getNode(first.var, (BDDNode) apply(op, first.lo, second.lo), (BDDNode) apply(op, first.hi, second.hi));
-					}else if(varToIndex[first.var] < varToIndex[second.var]){
+					}else if(v2i[first.var] < v2i[second.var]){
 						cached = getNode(first.var, (BDDNode) apply(op, first.lo, second), (BDDNode) apply(op, first.hi, second));
 					}else{
 						cached = getNode(second.var, (BDDNode) apply(op, first, second.lo), (BDDNode) apply(op, first, second.hi));
@@ -415,7 +415,7 @@ public final class BDDFactory {
 		 * @return
 		 */
 		public int satCount(){
-			return (int) apply(Operation.COUNT, ref, null) << varToIndex[ref.var];
+			return (int) apply(Operation.COUNT, ref, null) << v2i[ref.var];
 		}
 		
 		/**
@@ -491,12 +491,12 @@ public final class BDDFactory {
 				// The constant LO bdd has no satisfying solutions, nothing to do
 				if(ref != LO){
 					stack = new Stack<IterNode>();
-					solution = new boolean[varToIndex.length];
-					nextSolution = new boolean[varToIndex.length];
-					if(ref == HI || indexToVar[0] != ref.var){
-						dfsLocation = new IterNode(indexToVar[0], ref, ref);
+					solution = new boolean[v2i.length];
+					nextSolution = new boolean[v2i.length];
+					if(ref == HI || i2v[0] != ref.var){
+						dfsLocation = new IterNode(i2v[0], ref, ref);
 					}else{
-						dfsLocation = new IterNode(indexToVar[0], ref.lo, ref.hi);
+						dfsLocation = new IterNode(i2v[0], ref.lo, ref.hi);
 					}
 					
 					stack.push(dfsLocation);
@@ -578,12 +578,12 @@ public final class BDDFactory {
 					// Non-leaf
 					if(var >= 0){
 						// Index of the variable that follows this one in the ordering
-						int nextIdx = varToIndex[var] + 1;
+						int nextIdx = v2i[var] + 1;
 						
 						// If there is a successor in the ordering
-						if(nextIdx < varToIndex.length){
+						if(nextIdx < v2i.length){
 							// Find it
-							int nextVar = indexToVar[nextIdx];
+							int nextVar = i2v[nextIdx];
 							
 							// Do not create paths to lo
 							if(lo != LO){
