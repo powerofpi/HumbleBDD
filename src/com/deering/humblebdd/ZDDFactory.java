@@ -70,7 +70,7 @@ public final class ZDDFactory {
 	/**
 	 * Maps from variables to ordering indices.
 	 */
-	private int[] varToIndex;
+	private int[] v2i;
 	
 	/**
 	 * Maps from ordering indices to variables.
@@ -112,10 +112,10 @@ public final class ZDDFactory {
 			}
 		}
 		this.indexToVar = new int[varOrdering.length];
-		this.varToIndex = new int[varOrdering.length];
+		this.v2i = new int[varOrdering.length];
 		for(int i=0; i < varOrdering.length; i++){
 			indexToVar[i] = varOrdering[i];
-			varToIndex[indexToVar[i]] = i;
+			v2i[indexToVar[i]] = i;
 		}
 		
 		this.LO = new ZDDNode(-1, null, null);
@@ -131,7 +131,7 @@ public final class ZDDFactory {
 	 * @return
 	 */
 	public int[] getOrdering(){
-		return Arrays.copyOf(varToIndex, varToIndex.length);
+		return Arrays.copyOf(v2i, v2i.length);
 	}
 	
 	/**
@@ -150,7 +150,7 @@ public final class ZDDFactory {
 	 * @return
 	 */
 	public ZDD element(int var){
-		if(var < 0 || var >= varToIndex.length) throw new HumbleException("No such variable: " + var);
+		if(var < 0 || var >= v2i.length) throw new HumbleException("No such variable: " + var);
 		return new ZDD(getNode(var, LO, HI));
 	}
 
@@ -178,7 +178,7 @@ public final class ZDDFactory {
 	 * @return
 	 */
 	private ZDDNode getNode(int var, ZDDNode lo, ZDDNode hi){
-		if(var < 0 || var >= varToIndex.length) throw new HumbleException("No such variable: " + var);
+		if(var < 0 || var >= v2i.length) throw new HumbleException("No such variable: " + var);
 		// Node elimination
 		if(LO == hi) return lo;
 		ZDDNode key = new ZDDNode(var, lo, hi);
@@ -196,7 +196,15 @@ public final class ZDDFactory {
 	 * 
 	 * Time complexity of operations:
 	 * 
-	 * TODO Document runtime of operations
+	 * union(this, other): O(|this| + |other|)
+	 * difference(this, other): O(|this| + |other|)
+	 * intersection(this, other): O(|this| + |other|)
+	 * equals(this, other): O(1)
+	 * count(this): O(|this|)
+	 * subsetHi(this, var): O(|this|)
+	 * subsetLo(this, var): O(|this|)
+	 * toggle(this, var): O(|this|)
+	 * 
 	 * 
 	 * @author tdeering
 	 *
@@ -245,7 +253,7 @@ public final class ZDDFactory {
 		 */
 		private ZDD apply(byte op, int var){
 			// Nonsensical-variable check
-			if(var < 0 || var >= varToIndex.length) throw new HumbleException("No such variable: " + var);
+			if(var < 0 || var >= v2i.length) throw new HumbleException("No such variable: " + var);
 			ZDDNode applied = (ZDDNode) apply(op, ref, null, var);
 			if(applied == ref) return this;
 			return new ZDD(applied);
@@ -327,17 +335,17 @@ public final class ZDDFactory {
 			if(cached == null){
 				switch(op){
 				case Operation.SUBSET_HI:
-					if(first.var < var) cached = LO;
+					if(v2i[first.var] > v2i[var]) cached = LO;
 					else if(first.var == var) cached = ref.hi;
 					else cached = getNode(first.var, (ZDDNode) apply(op, first.lo, null, var), (ZDDNode) apply(op, first.hi, null, var));
 					break;
 				case Operation.SUBSET_LO:
-					if(first.var < var) cached = first;
+					if(v2i[first.var] > v2i[var]) cached = first;
 					else if(first.var == var) cached = first.lo;
 					else cached = getNode(first.var, (ZDDNode) apply(op, first.lo, null, var), (ZDDNode) apply(op, first.hi, null, var)); 
 					break;
 				case Operation.TOGGLE:
-					if(ref.var < var) cached = getNode(first.var, LO, first);
+					if(v2i[ref.var] > v2i[var]) cached = getNode(first.var, LO, first);
 					else if(ref.var == var) return getNode(first.var, first.hi, first.lo);
 					else cached = getNode(op, (ZDDNode) apply(op, first.lo, null, var), (ZDDNode) apply(op, first.hi, null, var));
 					break;
@@ -345,24 +353,24 @@ public final class ZDDFactory {
 					if(first == LO) cached = second;
 					else if(second == LO) cached = first;
 					else if(first == second) cached = first;
-					else if(first.var > second.var) cached = getNode(first.var, (ZDDNode) apply(op, first.lo, second, var), first.hi);
-					else if(first.var < second.var) cached = getNode(second.var, (ZDDNode) apply(op, first, second.lo, var), second.hi);
+					else if(v2i[first.var] < v2i[second.var]) cached = getNode(first.var, (ZDDNode) apply(op, first.lo, second, var), first.hi);
+					else if(v2i[first.var] > v2i[second.var]) cached = getNode(second.var, (ZDDNode) apply(op, first, second.lo, var), second.hi);
 					else cached = getNode(first.var, (ZDDNode) apply(op, first.lo, second.lo, var), (ZDDNode) apply(op, first.hi, second.hi, var));
 					break;
 				case Operation.INTERSECTION:
 					if(first == LO) cached = LO;
 					else if(second == LO) cached = LO;
 					else if(first == second) cached = first;
-					else if(first.var > second.var) cached = apply(op, first.lo, second, var);
-					else if(first.var < second.var) cached = apply(op, first, second.lo, var);
+					else if(v2i[first.var] < v2i[second.var]) cached = apply(op, first.lo, second, var);
+					else if(v2i[first.var] > v2i[second.var]) cached = apply(op, first, second.lo, var);
 					else cached = getNode(first.var, (ZDDNode) apply(op, first.lo, second.lo, var), (ZDDNode) apply(op, first.hi, second.hi, var));
 					break;
 				case Operation.DIFFERENCE:
 					if(first == LO) cached = LO;
 					else if(second == LO) cached = first;
 					else if(first == second) cached = LO;
-					else if(first.var > second.var) cached = getNode(first.var, (ZDDNode) apply(op, first.lo, second, var), first.hi);
-					else if(first.var < second.var) cached = apply(op, first, second.lo, var);
+					else if(v2i[first.var] < v2i[second.var]) cached = getNode(first.var, (ZDDNode) apply(op, first.lo, second, var), first.hi);
+					else if(v2i[first.var] > v2i[second.var]) cached = apply(op, first, second.lo, var);
 					else cached = getNode(first.var, (ZDDNode) apply(op, first.lo, second.lo, var), (ZDDNode) apply(op, first.hi, second.hi, var));
 					break;
 				case Operation.COUNT:

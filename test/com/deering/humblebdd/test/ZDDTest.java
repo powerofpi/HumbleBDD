@@ -6,7 +6,7 @@ import com.deering.humblebdd.ZDDFactory.ZDD;
 public class ZDDTest {
 
 	public static void main(String[] args){
-		ZDDFactory f = new ZDDFactory(new int[]{2,0,1,3}, 100);
+		ZDDFactory f = new ZDDFactory(new int[]{0,2,1,3}, 100);
 		
 		ZDD z0 = f.element(0);
 		System.out.println(z0);
