@@ -1,4 +1,4 @@
-package com.deering.humblebdd;
+package com.deering.humblebdd.bdd;
 
 import java.util.Arrays;
 import java.util.Iterator;
@@ -7,6 +7,7 @@ import java.util.NoSuchElementException;
 import java.util.Stack;
 import java.util.WeakHashMap;
 
+import com.deering.humblebdd.HumbleException;
 import com.deering.humblebdd.util.MaxSizeHashMap;
 
 /**

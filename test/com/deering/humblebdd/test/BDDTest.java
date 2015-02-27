@@ -2,8 +2,8 @@ package com.deering.humblebdd.test;
 
 import java.util.Arrays;
 
-import com.deering.humblebdd.BDDFactory;
-import com.deering.humblebdd.BDDFactory.BDD;
+import com.deering.humblebdd.bdd.BDDFactory;
+import com.deering.humblebdd.bdd.BDDFactory.BDD;
 
 public class BDDTest {
 

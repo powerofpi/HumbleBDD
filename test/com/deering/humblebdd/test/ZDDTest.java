@@ -1,7 +1,7 @@
 package com.deering.humblebdd.test;
 
-import com.deering.humblebdd.ZDDFactory;
-import com.deering.humblebdd.ZDDFactory.ZDD;
+import com.deering.humblebdd.zdd.ZDDFactory;
+import com.deering.humblebdd.zdd.ZDDFactory.ZDD;
 
 public class ZDDTest {
 
