@@ -201,6 +201,7 @@ public final class ZDDFactory {
 	 * difference(this, other): O(|this| + |other|)
 	 * intersection(this, other): O(|this| + |other|)
 	 * equals(this, other): O(1)
+	 * isEmpty(this): O(1)
 	 * count(this): O(|this|)
 	 * subsetHi(this, var): O(|this|)
 	 * subsetLo(this, var): O(|this|)
@@ -387,6 +388,15 @@ public final class ZDDFactory {
 			return cached;
 		}
 
+		/**
+		 * Returns whether this ZDD represents the empty set.
+		 * 
+		 * @return
+		 */
+		public boolean isEmpty(){
+			return this == LO_ZDD;
+		}
+		
 		/**
 		 * Returns the number of variables in this ZDD
 		 * 
