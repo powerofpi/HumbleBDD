@@ -21,27 +21,31 @@ public class ZDDSetPool<T> {
 	private ZDDFactory f;
 	private Map<T, Integer> e2v;
 	private Object[] v2e;
-	private int varCounter;
 	
-	public ZDDSetPool(int setDomainSize, int operatorCacheSize){
-		if(setDomainSize <= 0) throw new HumbleException("Domain size must be a positive integer");
-		
-		int[] varOrder = new int[setDomainSize];
-		for(int i = setDomainSize - 1; i >= 0; --i) varOrder[i] = i;
-		f = new ZDDFactory(varOrder, operatorCacheSize);
-		
-		e2v = new HashMap<T, Integer>();
-		v2e = new Object[setDomainSize];
-	}
-	
-	private int getVar(T element){
-		Integer var = e2v.get(element);
-		if(var == null){
-			var = varCounter++;
-			e2v.put(element, var);
-			v2e[var] = element;
+	/**
+	 * Constructs a new ZDDSetPool. The given iterator should iterate over the domain in increasing 
+	 * predicted likelihood that each element will be present in sets. In other words, least common
+	 * set element first, most common set member last. This helps us choose a good mapping from
+	 * elements to ZDD variables.
+	 * 
+	 * @param domainSize
+	 * @param averageSetSize
+	 * @param domainIterator
+	 * @param operatorCacheSize
+	 */
+	public ZDDSetPool(int domainSize, Iterator<T> domainIterator, int operatorCacheSize){
+		if(domainSize <= 0) throw new HumbleException("Domain size must be a positive integer");
+		e2v = new HashMap<T, Integer>(domainSize);
+		v2e = new Object[domainSize];
+		int[] varOrder = new int[domainSize];
+
+		for(int i = 0; i < domainSize; ++i){
+			T t = domainIterator.next();
+			e2v.put(t, i);
+			v2e[i] = t;
+			varOrder[i] = i;
 		}
-		return var;
+		f = new ZDDFactory(varOrder, operatorCacheSize);
 	}
 	
 	public class ZDDSet implements Set<T>{
@@ -65,10 +69,9 @@ public class ZDDSetPool<T> {
 			return zdd.isEmpty();
 		}
 
-		@SuppressWarnings("unchecked")
 		@Override
 		public boolean contains(Object o) {
-			return !zdd.intersection(f.element(getVar((T) o))).isEmpty();
+			return !zdd.intersection(f.element(e2v.get(o))).isEmpty();
 		}
 
 		@Override
@@ -127,40 +130,37 @@ public class ZDDSetPool<T> {
 		@Override
 		public boolean add(T e) {
 			ZDD original = zdd;
-			zdd = zdd.union(f.element(getVar(e)));
+			zdd = zdd.union(f.element(e2v.get(e)));
 			return original != zdd;
 		}
 
-		@SuppressWarnings("unchecked")
 		@Override
 		public boolean remove(Object o) {
 			ZDD original = zdd;
-			zdd = zdd.difference(f.element(getVar((T) o)));
+			zdd = zdd.difference(f.element(e2v.get(o)));
 			return original != zdd;
 		}
 
-		@SuppressWarnings("unchecked")
 		@Override
 		public boolean containsAll(Collection<?> c) {
 			if(c == null) throw new HumbleException("c must not be null!", new NullPointerException());
 			if(zdd.isEmpty() && !c.isEmpty()) return false;
 			
 			for(Object o : c){
-				if(zdd.intersection(f.element(getVar((T) o))).isEmpty())
+				if(zdd.intersection(f.element(e2v.get(o))).isEmpty())
 					return false;
 			}
 			
 			return true;
 		}
 
-		@SuppressWarnings("unchecked")
 		@Override
 		public boolean addAll(Collection<? extends T> c) {
 			ZDD z1 = zdd;
 			ZDD z2 = zdd;
 			boolean added = false;
 			for(Object o : c){
-				ZDD z3 = f.element(getVar((T) o));
+				ZDD z3 = f.element(e2v.get(o));
 				z1 = z1.union(z3);
 				added |= z2 != z1;
 				z2 = z1;
@@ -188,9 +188,9 @@ public class ZDDSetPool<T> {
 		private ZDD collectionToZDD(Collection<?> c){
 			Iterator<?> iter = c.iterator();
 			if(!iter.hasNext()) return f.empty();
-			ZDD z = f.element(getVar((T) iter.next()));
+			ZDD z = f.element(e2v.get(iter.next()));
 			while(iter.hasNext()){
-				z = z.union(f.element(getVar((T) iter.next())));
+				z = z.union(f.element(e2v.get((T) iter.next())));
 			}
 			return z;
 		}

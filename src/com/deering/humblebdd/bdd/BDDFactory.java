@@ -2,13 +2,12 @@ package com.deering.humblebdd.bdd;
 
 import java.util.Arrays;
 import java.util.Iterator;
-import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Stack;
 import java.util.WeakHashMap;
 
 import com.deering.humblebdd.HumbleException;
-import com.deering.humblebdd.util.MaxSizeHashMap;
+import com.deering.humblebdd.util.FixedSizeHashMap;
 
 /**
  * A factory that wraps a universe graph of shared, reduced, ordered, BDDs (SROBDDs).
@@ -87,7 +86,7 @@ public final class BDDFactory {
 	/**
 	 * Cache of BDD operation results
 	 */
-	private Map<BDDOp, Object> opCache;
+	private FixedSizeHashMap<BDDOp, Object> opCache;
 	
 	/**
 	 * Constructs a new BDDFactory with the given zero-indexed variables the given order. For example:
@@ -125,7 +124,7 @@ public final class BDDFactory {
 		this.HI = new BDDNode(-1, null, null);
 		this.HI_BDD = new BDD(HI);
 		this.bddNodes = new WeakHashMap<BDDNode, BDDNode>();
-		this.opCache = new MaxSizeHashMap<BDDOp, Object>(operatorCacheSize);
+		this.opCache = new FixedSizeHashMap<BDDOp, Object>(operatorCacheSize);
 	}
 	
 	/**

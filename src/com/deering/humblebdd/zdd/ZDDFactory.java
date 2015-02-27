@@ -2,12 +2,11 @@ package com.deering.humblebdd.zdd;
 
 import java.util.Arrays;
 import java.util.Iterator;
-import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.WeakHashMap;
 
 import com.deering.humblebdd.HumbleException;
-import com.deering.humblebdd.util.MaxSizeHashMap;
+import com.deering.humblebdd.util.FixedSizeHashMap;
 
 /**
  * A factory that wraps a universe graph of shared, reduced, ordered, zero-suppressed ZDDs (ZDDs).
@@ -54,12 +53,12 @@ public final class ZDDFactory {
 	private static final int[] LARGE_PRIMES = new int[]{2147481053, 2147481151, 2147482093};
 	
 	/**
-	 * Constant "false" node.
+	 * Represents the empty family containing no sets
 	 */
 	private ZDDNode LO;
 	
 	/**
-	 * Constant "true" node.
+	 * Represents the unit family containing only the empty set
 	 */
 	private ZDDNode HI;
 
@@ -67,6 +66,11 @@ public final class ZDDFactory {
 	 * ZDD wrapping LO.
 	 */
 	private ZDD LO_ZDD;
+	
+	/**
+	 * ZDD wrapping HI
+	 */
+	private ZDD HI_ZDD;
 	
 	/**
 	 * Maps from variables to ordering indices.
@@ -86,7 +90,7 @@ public final class ZDDFactory {
 	/**
 	 * Cache of ZDD operation results
 	 */
-	private Map<ZDDOp, Object> opCache;
+	private FixedSizeHashMap<ZDDOp, Object> opCache;
 	
 	/**
 	 * Constructs a new ZDDFactory with the given zero-indexed variables the given order. For example:
@@ -122,8 +126,9 @@ public final class ZDDFactory {
 		this.LO = new ZDDNode(-1, null, null);
 		this.LO_ZDD = new ZDD(LO);
 		this.HI = new ZDDNode(-1, null, null);
+		this.HI_ZDD = new ZDD(HI);
 		this.zddNodes = new WeakHashMap<ZDDNode, ZDDNode>();
-		this.opCache = new MaxSizeHashMap<ZDDOp, Object>(operatorCacheSize);
+		this.opCache = new FixedSizeHashMap<ZDDOp, Object>(operatorCacheSize);
 	}
 	
 	/**
@@ -161,7 +166,7 @@ public final class ZDDFactory {
 	 * @return
 	 */
 	public ZDD base(){
-		return element(0);
+		return HI_ZDD;
 	}
 	
 	/**
@@ -394,7 +399,7 @@ public final class ZDDFactory {
 		 * @return
 		 */
 		public boolean isEmpty(){
-			return this == LO_ZDD;
+			return this == HI_ZDD;
 		}
 		
 		/**
@@ -505,8 +510,8 @@ public final class ZDDFactory {
 		@Override
 		public int hashCode() {
 			if(hash == null){
-				hash = LARGE_PRIMES[0] * var + 
-					   (lo == null ? 0:LARGE_PRIMES[1] * lo.hashCode()) + 
+				hash = LARGE_PRIMES[0] * var ^ 
+					   (lo == null ? 0:LARGE_PRIMES[1] * lo.hashCode()) ^ 
 					   (hi == null ? 0:LARGE_PRIMES[2] * hi.hashCode());
 			}
 			
@@ -556,7 +561,7 @@ public final class ZDDFactory {
 		}
 		@Override
 		public int hashCode() {
-			return (op * LARGE_PRIMES[0]) + a.hashCode() + (b == null ? 0:b.hashCode()) + (var * LARGE_PRIMES[1]);
+			return (op * LARGE_PRIMES[0]) ^ a.hashCode() ^ (b == null ? 0:b.hashCode()) ^ (var * LARGE_PRIMES[1]);
 		}
 		@Override
 		public boolean equals(Object obj) {
