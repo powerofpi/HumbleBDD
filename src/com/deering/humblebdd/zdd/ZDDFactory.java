@@ -150,6 +150,15 @@ public final class ZDDFactory {
 	}
 
 	/**
+	 * Return the size of the backing universe graph
+	 * @return
+	 */
+	public int size(){
+		System.gc();
+		return zddNodes.keySet().size();
+	}
+	
+	/**
 	 * Return the ZDD containing only element var
 	 * 
 	 * @param var

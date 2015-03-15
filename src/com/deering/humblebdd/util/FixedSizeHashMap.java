@@ -20,6 +20,7 @@ public class FixedSizeHashMap<K, V> {
 	
 	@SuppressWarnings("unchecked")
 	public V get(K key){
+		if(keyCache.length == 0) return null;
 		int hash = key.hashCode();
 		hash = (hash >= 0 ? hash : -hash) % keyCache.length;
 		if(key.equals(keyCache[hash])) return (V) valCache[hash];
@@ -27,6 +28,7 @@ public class FixedSizeHashMap<K, V> {
 	}
 	
 	public void put(K key, V val){
+		if(keyCache.length == 0) return;
 		int hash = key.hashCode();
 		hash = (hash >= 0 ? hash : -hash) % keyCache.length;
 		keyCache[hash] = key;
