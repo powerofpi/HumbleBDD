@@ -332,11 +332,12 @@ public final class ZDDFactory extends DDFactory{
 		/**
 		 * Convert this ZDD into a BDD in the given factory.
 		 * 
+		 * TODO This can be done more efficiently than enumerating the set family
+		 * 
 		 * @param factory
 		 * @return
 		 */
 		public BDD toBDD(BDDFactory factory){
-			// TODO make this more efficient
 			BDD res = factory.lo();
 
 			for(boolean[] family : this){

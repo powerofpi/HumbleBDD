@@ -6,6 +6,8 @@ import java.util.Stack;
 
 import com.deering.humblebdd.DDFactory;
 import com.deering.humblebdd.HumbleException;
+import com.deering.humblebdd.zdd.ZDDFactory;
+import com.deering.humblebdd.zdd.ZDDFactory.ZDD;
 
 /**
  * A factory for shared, reduced, ordered, BDDs (SROBDDs).
@@ -281,6 +283,31 @@ public final class BDDFactory extends DDFactory{
 		 */
 		public int satCount(){
 			return (int) apply(COUNT, ref, null) << v2i[ref.var];
+		}
+		
+		/**
+		 * Convert this BDD into a ZDD in the given factory.
+		 * 
+		 * TODO This can be done more efficiently than enumerating the satisfying solutions
+		 * 
+		 * @param factory
+		 * @return
+		 */
+		public ZDD toZDD(ZDDFactory factory){
+			ZDD res = factory.empty();
+
+			for(boolean[] solution : this){
+				int trueCount = 0;
+				for(boolean b : solution) if(b) trueCount++;
+				
+				int idx = 0;
+				int[] set = new int[trueCount];
+				for(int i = 0; i < solution.length; ++i) if(solution[i]) set[idx++] = i;
+				
+				res = res.union(factory.family(new int[][]{set}));
+			}
+			
+			return res;
 		}
 		
 		@Override
