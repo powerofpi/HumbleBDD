@@ -14,15 +14,18 @@ import com.deering.humblebdd.zdd.ZDDFactory.ZDD;
 
 /**
  * A pool of ZDD sets implemented backed by the same ZDDFactory.
+ * 
+ * TODO correct me
+ * 
  * @author tdeering
  *
  */
 public class ZDDSetPool<T> {
-	private ZDDFactory f;
+	/*private ZDDFactory f;
 	private Map<T, Integer> e2v;
 	private Object[] v2e;
 	
-	/**
+	*//**
 	 * Constructs a new ZDDSetPool. The given iterator should iterate over the domain in increasing 
 	 * predicted likelihood that each element will be present in sets. In other words, least common
 	 * set element first, most common set member last. This helps us choose a good mapping from
@@ -32,7 +35,7 @@ public class ZDDSetPool<T> {
 	 * @param averageSetSize
 	 * @param domainIterator
 	 * @param operatorCacheSize
-	 */
+	 *//*
 	public ZDDSetPool(int domainSize, Iterator<T> domainIterator, int operatorCacheSize){
 		if(domainSize <= 0) throw new HumbleException("Domain size must be a positive integer");
 		e2v = new HashMap<T, Integer>(domainSize);
@@ -212,5 +215,5 @@ public class ZDDSetPool<T> {
 			sb.append('}');
 			return sb.toString();
 		}
-	}
+	}*/
 }

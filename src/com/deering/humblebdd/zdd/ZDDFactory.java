@@ -1,66 +1,67 @@
 package com.deering.humblebdd.zdd;
 
-import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
-import java.util.WeakHashMap;
+import java.util.Set;
+import java.util.Stack;
 
+import com.deering.humblebdd.DDFactory;
 import com.deering.humblebdd.HumbleException;
-import com.deering.humblebdd.util.FixedSizeHashMap;
+import com.deering.humblebdd.bdd.BDDFactory;
+import com.deering.humblebdd.bdd.BDDFactory.BDD;
 
 /**
- * A factory that wraps a universe graph of shared, reduced, ordered, zero-suppressed ZDDs (ZDDs).
+ * A factory for shared, reduced, ordered, zero-suppressed BDDs (ZDDs).
  * Supports up to Integer.MAX_VALUE variables.
  * 
  * USAGE EXAMPLE:
  * 
- * // New factory with 4 variables and an operator cache of size 100
- * ZDDFactory f = new ZDDFactory(new int[]{0,1,2,3}, 100);
- * 
- * // Create a set of variables
- * ZDD set1 = f.element(0).union(f.element(2));
- * 
- * // Create another set of variables
- * ZDD set2 = f.element(3).intersection(set1);
- * 
- * // Inspect a set
- * System.out.println(set2);
- * System.out.println(set2.count());
- * for(int var : set2) System.out.print(var);
+ * TODO 
  * 
  * @author tdeering
  *
  */
-public final class ZDDFactory {
+public final class ZDDFactory extends DDFactory{
 	/**
-	 * Op codes for BDD operations.
-	 * @author tdeering
-	 *
+	 * Unary subset of the family that contains this variable, with this variable removed.
 	 */
-	public static interface Operation{
-		static final byte SUBSET_HI = 1;
-		static final byte SUBSET_LO = 2;
-		static final byte UNION = 3;
-		static final byte DIFFERENCE = 4;
-		static final byte INTERSECTION = 5;
-		static final byte TOGGLE = 6;
-		static final byte COUNT = 7;
-	}
+	public static final int SUBSET1 = 1;
 	
 	/**
-	 * Large prime numbers for hashing.
+	 * Unary subset of the family that does not contain this variable
 	 */
-	private static final int[] LARGE_PRIMES = new int[]{2147481053, 2147481151, 2147482093};
+	public static final int SUBSET0 = 2;
 	
 	/**
-	 * Represents the empty family containing no sets
+	 * Unary inversion of the variable
 	 */
-	private ZDDNode LO;
+	public static final int CHANGE = 3;
+
+	/**
+	 * Unary count of the number of elements
+	 */
+	public static final int ELEMENT_COUNT = 4;
 	
 	/**
-	 * Represents the unit family containing only the empty set
+	 * Unary count of the number of sets
 	 */
-	private ZDDNode HI;
+	public static final int SET_COUNT = 5;
+	
+	/**
+	 * Binary union of two set families
+	 */
+	public static final int UNION = 6;
+	
+	/**
+	 * Binary difference of two set families
+	 */
+	public static final int DIFFERENCE = 7;
+	
+	/**
+	 * Binary intersection of two set families
+	 */
+	public static final int INTERSECTION = 8;
 
 	/**
 	 * ZDD wrapping LO.
@@ -71,26 +72,6 @@ public final class ZDDFactory {
 	 * ZDD wrapping HI
 	 */
 	private ZDD HI_ZDD;
-	
-	/**
-	 * Maps from variables to ordering indices.
-	 */
-	private int[] v2i;
-	
-	/**
-	 * Maps from ordering indices to variables.
-	 */
-	private int[] indexToVar;
-
-	/**
-	 * Nodes of the shared graph.
-	 */
-	private WeakHashMap<ZDDNode, ZDDNode> zddNodes; 
-	
-	/**
-	 * Cache of ZDD operation results
-	 */
-	private FixedSizeHashMap<ZDDOp, Object> opCache;
 	
 	/**
 	 * Constructs a new ZDDFactory with the given zero-indexed variables the given order. For example:
@@ -106,38 +87,16 @@ public final class ZDDFactory {
 	 * @param varOrdering
 	 */
 	public ZDDFactory(int[] varOrdering, int operatorCacheSize){
-		int[] counts = new int[varOrdering.length];
-		for(int i : varOrdering){
-			try{
-				if(++counts[i] > 1){
-					throw new HumbleException("Same variable " + i + " appeared multiple times in variable ordering!");
-				}
-			}catch(ArrayIndexOutOfBoundsException e){
-				throw new HumbleException("Variables in ordering must be 0 to ordering.length - 1. Got " + i, e);
-			}
-		}
-		this.indexToVar = new int[varOrdering.length];
-		this.v2i = new int[varOrdering.length];
-		for(int i=0; i < varOrdering.length; i++){
-			indexToVar[i] = varOrdering[i];
-			v2i[indexToVar[i]] = i;
-		}
-		
-		this.LO = new ZDDNode(-1, null, null);
+		super(varOrdering, operatorCacheSize);
 		this.LO_ZDD = new ZDD(LO);
-		this.HI = new ZDDNode(-1, null, null);
 		this.HI_ZDD = new ZDD(HI);
-		this.zddNodes = new WeakHashMap<ZDDNode, ZDDNode>();
-		this.opCache = new FixedSizeHashMap<ZDDOp, Object>(operatorCacheSize);
 	}
 	
-	/**
-	 * Returns the current variable ordering.
-	 * 
-	 * @return
-	 */
-	public int[] getOrdering(){
-		return Arrays.copyOf(v2i, v2i.length);
+	@Override
+	protected DDNode nodeElimination(int var, DDNode lo, DDNode hi) {
+		// ZDD elimination rule.
+		if(hi == LO) return lo;
+		return null;
 	}
 	
 	/**
@@ -148,29 +107,9 @@ public final class ZDDFactory {
 	public ZDD empty(){
 		return LO_ZDD;
 	}
-
-	/**
-	 * Return the size of the backing universe graph
-	 * @return
-	 */
-	public int size(){
-		System.gc();
-		return zddNodes.keySet().size();
-	}
 	
 	/**
-	 * Return the ZDD containing only element var
-	 * 
-	 * @param var
-	 * @return
-	 */
-	public ZDD element(int var){
-		if(var < 0 || var >= v2i.length) throw new HumbleException("No such variable: " + var);
-		return new ZDD(getNode(var, LO, HI));
-	}
-
-	/**
-	 * Return the ZDD containing only element 0
+	 * Return the ZDD set family containing only the empty set.
 	 * 
 	 * @return
 	 */
@@ -179,33 +118,64 @@ public final class ZDDFactory {
 	}
 	
 	/**
-	 * Return the shared node which represents the given variable and has exactly
-	 * the given lo and hi children.
-	 * 
-	 * NOTE: This function is what gives our ZDDs the "Reduced" property. That is,
-	 * there is exactly one ZDDNode with a particular pair of (lo, hi) children,
-	 * and no ZDDNode has (lo, hi) such that lo == high. Therefore, the shared graph
-	 * is maximally-reduced with respect to the given variable ordering.
+	 * Return the ZDD representing the given family of sets
 	 * 
 	 * @param var
-	 * @param lo
-	 * @param hi
 	 * @return
 	 */
-	private ZDDNode getNode(int var, ZDDNode lo, ZDDNode hi){
-		if(var < 0 || var >= v2i.length) throw new HumbleException("No such variable: " + var);
-		// Node elimination
-		if(LO == hi) return lo;
-		ZDDNode key = new ZDDNode(var, lo, hi);
-		// Node sharing
-		ZDDNode sharedNode = zddNodes.get(key);
-		if(sharedNode == null){
-			sharedNode = key;
-			zddNodes.put(sharedNode, sharedNode);
+	public ZDD family(int[][] sets){
+		Set<Set<Integer>> familyList = new HashSet<Set<Integer>>(sets.length);
+		for(int[] set : sets){
+			Set<Integer> setList = new HashSet<Integer>(set.length);
+			for(int i : set){
+				if(i < 0 || i >= v2i.length) throw new HumbleException("No such variable: " + i);
+				setList.add(i);
+			}
+			familyList.add(setList);
 		}
-		return sharedNode;
+			
+		return new ZDD(family(i2v[0], familyList));
 	}
-
+	
+	/**
+	 * Recursively construct the requested set family.
+	 * 
+	 * @param var
+	 * @param familyList
+	 * @return
+	 */
+	private DDNode family(int var, Set<Set<Integer>> familyList){
+		if(familyList.isEmpty()) return LO;
+		if(familyList.size() == 1 && familyList.iterator().next().isEmpty()) return HI;
+		
+		// Construct F0 and F1
+		Set<Set<Integer>> f0 = new HashSet<Set<Integer>>(familyList.size());
+		Set<Set<Integer>> f1 = new HashSet<Set<Integer>>(familyList.size());
+		
+		boolean anyContained = false;
+		for(Set<Integer> set : familyList){
+			if(set.contains(var)){
+				anyContained = true;
+				Set<Integer> s1 = new HashSet<Integer>(set);
+				s1.remove(var);
+				f1.add(s1);
+			}else{
+				f0.add(set);
+			}
+		}
+		int nextVarIdx = v2i[var] + 1;
+		if(nextVarIdx < v2i.length){
+			int nextVar = i2v[nextVarIdx];
+			if(anyContained){
+				return getNode(var, family(nextVar, f0), family(nextVar,f1));
+			}else{
+				return family(nextVar, familyList);
+			}
+		}else{
+			return getNode(var, f0.isEmpty() ? LO:HI, f1.isEmpty() ? LO:HI);
+		}
+	}
+	
 	/**
 	 * Immutable ZDD class. Operations return new ZDD object instances.
 	 * 
@@ -225,11 +195,11 @@ public final class ZDDFactory {
 	 * @author tdeering
 	 *
 	 */
-	public final class ZDD implements Iterable<Integer>{
+	public final class ZDD extends DD{
 		/**
 		 * Head node of this ZDD in the shared ZDD graph.
 		 */
-		private ZDDNode ref;
+		private DDNode ref;
 		
 		/**
 		 * Creates a ZDD represented by the given node of the given factory. 
@@ -238,41 +208,9 @@ public final class ZDDFactory {
 		 * @param ref
 		 * @param factory
 		 */
-		private ZDD(ZDDNode ref){
+		private ZDD(DDNode ref){
+			super(ref);
 			this.ref = ref;
-		}
-		
-		/**
-		 * Applies the given operation between this ZDD and the other.
-		 * 
-		 * @param op
-		 * @param other
-		 * @return
-		 */
-		private ZDD apply(byte op, ZDD other){
-			// Null check
-			if(other == null) throw new HumbleException("Other cannot be null!", new NullPointerException());
-			// Different factories?
-			if(ZDDFactory.this != other.getFactory()) throw new HumbleException("ZDDs must come from the same factory!");
-			ZDDNode applied = (ZDDNode) apply(op, ref, other.ref, -1);
-			if(applied == ref) return this;
-			else if(applied == other.ref) return other;
-			return new ZDD(applied);
-		}
-		
-		/**
-		 * Applies the given operation on this ZDD.
-		 * 
-		 * @param op
-		 * @param other
-		 * @return
-		 */
-		private ZDD apply(byte op, int var){
-			// Nonsensical-variable check
-			if(var < 0 || var >= v2i.length) throw new HumbleException("No such variable: " + var);
-			ZDDNode applied = (ZDDNode) apply(op, ref, null, var);
-			if(applied == ref) return this;
-			return new ZDD(applied);
 		}
 		
 		/**
@@ -282,8 +220,8 @@ public final class ZDDFactory {
 		 * @param var
 		 * @return
 		 */
-		public ZDD subsetHi(int var){
-			return apply(Operation.SUBSET_HI, var);
+		public ZDD subset1(int var){
+			return new ZDD((DDNode) apply(SUBSET1, ref, var));
 		}
 		
 		/**
@@ -293,8 +231,8 @@ public final class ZDDFactory {
 		 * @param var
 		 * @return
 		 */
-		public ZDD subsetLo(int var){
-			return apply(Operation.SUBSET_LO, var);
+		public ZDD subset0(int var){
+			return new ZDD((DDNode) apply(SUBSET0, ref, var));
 		}
 		
 		/**
@@ -303,8 +241,8 @@ public final class ZDDFactory {
 		 * @param var
 		 * @return
 		 */
-		public ZDD toggle(int var){
-			return apply(Operation.TOGGLE, var);
+		public ZDD change(int var){
+			return new ZDD((DDNode) apply(CHANGE, ref, var));
 		}
 		
 		/**
@@ -314,7 +252,7 @@ public final class ZDDFactory {
 		 * @return
 		 */
 		public ZDD union(ZDD other){
-			return apply(Operation.UNION, other);
+			return new ZDD((DDNode) apply(UNION, ref, other.ref));
 		}
 		
 		/**
@@ -324,7 +262,7 @@ public final class ZDDFactory {
 		 * @return
 		 */
 		public ZDD intersection(ZDD other){
-			return apply(Operation.INTERSECTION, other);
+			return new ZDD((DDNode) apply(INTERSECTION, ref, other.ref));
 		}
 		
 		/**
@@ -334,81 +272,7 @@ public final class ZDDFactory {
 		 * @return
 		 */
 		public ZDD difference(ZDD other){
-			return apply(Operation.DIFFERENCE, other);
-		}
-		
-		/**
-		 * Apply the requested operation inductively, first consulting the operator cache
-		 * @param op
-		 * @param first
-		 * @param second
-		 * @param var
-		 * @return
-		 */
-		private Object apply(byte op, ZDDNode first, ZDDNode second, int var){
-			ZDDOp key = new ZDDOp(op, first, second, var);
-			Object cached = opCache.get(key);
-			if(cached == null){
-				switch(op){
-				case Operation.SUBSET_HI:
-					if(v2i[first.var] > v2i[var]) cached = LO;
-					else if(first.var == var) cached = ref.hi;
-					else cached = getNode(first.var, (ZDDNode) apply(op, first.lo, null, var), (ZDDNode) apply(op, first.hi, null, var));
-					break;
-				case Operation.SUBSET_LO:
-					if(v2i[first.var] > v2i[var]) cached = first;
-					else if(first.var == var) cached = first.lo;
-					else cached = getNode(first.var, (ZDDNode) apply(op, first.lo, null, var), (ZDDNode) apply(op, first.hi, null, var)); 
-					break;
-				case Operation.TOGGLE:
-					if(v2i[ref.var] > v2i[var]) cached = getNode(first.var, LO, first);
-					else if(ref.var == var) return getNode(first.var, first.hi, first.lo);
-					else cached = getNode(op, (ZDDNode) apply(op, first.lo, null, var), (ZDDNode) apply(op, first.hi, null, var));
-					break;
-				case Operation.UNION:
-					if(first == LO) cached = second;
-					else if(second == LO) cached = first;
-					else if(first == second) cached = first;
-					else if(v2i[first.var] < v2i[second.var]) cached = getNode(first.var, (ZDDNode) apply(op, first.lo, second, var), first.hi);
-					else if(v2i[first.var] > v2i[second.var]) cached = getNode(second.var, (ZDDNode) apply(op, first, second.lo, var), second.hi);
-					else cached = getNode(first.var, (ZDDNode) apply(op, first.lo, second.lo, var), (ZDDNode) apply(op, first.hi, second.hi, var));
-					break;
-				case Operation.INTERSECTION:
-					if(first == LO) cached = LO;
-					else if(second == LO) cached = LO;
-					else if(first == second) cached = first;
-					else if(v2i[first.var] < v2i[second.var]) cached = apply(op, first.lo, second, var);
-					else if(v2i[first.var] > v2i[second.var]) cached = apply(op, first, second.lo, var);
-					else cached = getNode(first.var, (ZDDNode) apply(op, first.lo, second.lo, var), (ZDDNode) apply(op, first.hi, second.hi, var));
-					break;
-				case Operation.DIFFERENCE:
-					if(first == LO) cached = LO;
-					else if(second == LO) cached = first;
-					else if(first == second) cached = LO;
-					else if(v2i[first.var] < v2i[second.var]) cached = getNode(first.var, (ZDDNode) apply(op, first.lo, second, var), first.hi);
-					else if(v2i[first.var] > v2i[second.var]) cached = apply(op, first, second.lo, var);
-					else cached = getNode(first.var, (ZDDNode) apply(op, first.lo, second.lo, var), (ZDDNode) apply(op, first.hi, second.hi, var));
-					break;
-				case Operation.COUNT:
-					if(first == LO) cached = 0;
-					else if(first == HI) cached = 1;
-					else cached = ((Integer) apply(op, first.lo, second, var)) + ((Integer) apply(op, first.hi, second, var));
-					break;
-				default:
-					throw new HumbleException("Unsupported op code: " + op);
-				}
-				opCache.put(key, cached);
-			}
-			return cached;
-		}
-
-		/**
-		 * Returns whether this ZDD represents the empty set.
-		 * 
-		 * @return
-		 */
-		public boolean isEmpty(){
-			return this == HI_ZDD;
+			return new ZDD((DDNode) apply(DIFFERENCE, ref, other.ref));
 		}
 		
 		/**
@@ -417,31 +281,74 @@ public final class ZDDFactory {
 		 * @return
 		 */
 		public int count(){
-			return (Integer) apply(Operation.COUNT, ref, null, -1);
+			return (Integer) apply(ELEMENT_COUNT, ref, null);
 		}
 		
+		@Override
+		protected Object compute(int op, DDNode first, Object second) {
+			switch(op){
+			case SUBSET1:
+				if(v2i[first.var] > v2i[(Integer) second]) return LO;
+				if(first.var == (Integer) second) return ref.hi;
+				return getNode(first.var, (DDNode) apply(op, first.lo, second), (DDNode) apply(op, first.hi, second));
+			case SUBSET0:
+				if(v2i[first.var] > v2i[(Integer) second]) return first;
+				if(first.var == (Integer) second) return first.lo;
+				return getNode(first.var, (DDNode) apply(op, first.lo, second), (DDNode) apply(op, first.hi, second)); 
+			case CHANGE:
+				if(v2i[ref.var] > v2i[(Integer) second]) return getNode(first.var, LO, first);
+				if(ref.var == (Integer) second) return getNode(first.var, first.hi, first.lo);
+				return getNode(op, (DDNode) apply(op, first.lo, second), (DDNode) apply(op, first.hi, second));
+			case UNION:
+				if(first == LO) return second;
+				if(second == LO) return first;
+				if(first == second) return first;
+				if(v2i[first.var] < v2i[((DDNode)second).var]) return getNode(first.var, (DDNode) apply(op, first.lo, second), first.hi);
+				if(v2i[first.var] > v2i[((DDNode)second).var]) return getNode(((DDNode)second).var, (DDNode) apply(op, first, ((DDNode)second).lo), ((DDNode)second).hi);
+				return getNode(first.var, (DDNode) apply(op, first.lo, ((DDNode)second).lo), (DDNode) apply(op, first.hi, ((DDNode)second).hi));
+			case INTERSECTION:
+				if(first == LO) return LO;
+				if(second == LO) return LO;
+				if(first == second) return first;
+				if(v2i[first.var] < v2i[((DDNode)second).var]) return apply(op, first.lo, second);
+				if(v2i[first.var] > v2i[((DDNode)second).var]) return apply(op, first, ((DDNode)second).lo);
+				return getNode(first.var, (DDNode) apply(op, first.lo, ((DDNode)second).lo), (DDNode) apply(op, first.hi, ((DDNode)second).hi));
+			case DIFFERENCE:
+				if(first == LO) return LO;
+				if(second == LO) return first;
+				if(first == second) return LO;
+				if(v2i[first.var] < v2i[((DDNode)second).var]) return getNode(first.var, (DDNode) apply(op, first.lo, second), first.hi);
+				if(v2i[first.var] > v2i[((DDNode)second).var]) return apply(op, first, ((DDNode)second).lo);
+				return getNode(first.var, (DDNode) apply(op, first.lo, ((DDNode)second).lo), (DDNode) apply(op, first.hi, ((DDNode)second).hi));
+			case ELEMENT_COUNT:
+				if(first == LO) return 0;
+				else if(first == HI) return 1;
+				else return ((Integer) apply(op, first.lo, second)) + ((Integer) apply(op, first.hi, second));
+			default:
+				throw new HumbleException("Unsupported op code: " + op);
+			}
+		}
+
 		/**
-		 * Return the ZDDFactory used to construct this ZDD.
+		 * Convert this ZDD into a BDD in the given factory.
+		 * 
+		 * @param factory
 		 * @return
 		 */
-		public ZDDFactory getFactory(){
-			return ZDDFactory.this;
+		public BDD toBDD(BDDFactory factory){
+			// TODO make this more efficient
+			BDD res = factory.lo();
+
+			for(boolean[] family : this){
+				res = res.or(factory.assignment(family));
+			}
+			
+			return res;
 		}
 		
-		/**
-		 * Iterates over the solutions to this ZDD. The returned solutions have the following meaning:
-		 * 
-		 * // One satisfying solution for the ZDD 
-		 * boolean[] sat = iter.next();
-		 * 
-		 * // Variable 3 has this value
-		 * boolean varThree = sat[3];
-		 * 
-		 * NOTE: The returned array is re-used by the iterator for efficiency reasons.
-		 */
 		@Override
-		public Iterator<Integer> iterator() {
-			return new ZDDIterator();
+		public Iterator<boolean[]> iterator() {
+			return new ZDDSatIterator();
 		}
 		
 		@Override
@@ -469,132 +376,116 @@ public final class ZDDFactory {
 		}
 		
 		/**
-		 * Iterates over the satisfying assignments for this ZDD.
+		 * Iterates over the satisfying assignments for this BDD.
 		 * @author tdeering
 		 *
 		 */
-		private final class ZDDIterator implements Iterator<Integer>{
-			ZDDNode cur;
+		private class ZDDSatIterator implements Iterator<boolean[]>{
+			private static final byte UNVISITED = 1;
+			private static final byte VISITED_LO = 2;
+			private static final byte VISITED_HI = 3;
+			boolean[] solution, nextSolution;
 			
-			public ZDDIterator(){
-				cur = ref;
+			/**
+			 * Used to carry out a DFS over satisfying solutions
+			 */
+			Stack<IterNode> stack;
+			
+			/**
+			 *  Current location in the DFS
+			 */
+			IterNode dfsLocation;
+			
+			public ZDDSatIterator(){
+				// The constant LO zdd has no family members
+				if(ref != LO){
+					stack = new Stack<IterNode>();
+					solution = new boolean[v2i.length];
+					nextSolution = new boolean[v2i.length];
+					dfsLocation = new IterNode(ref.var, ref.lo, ref.hi);
+					
+					stack.push(dfsLocation);
+					findNextSolution();
+				}
 			}
 			
 			@Override
 			public boolean hasNext() {
-				return cur != LO;
+				return dfsLocation != null;
 			}
 
 			@Override
-			public Integer next() {
-				if(cur == LO) throw new NoSuchElementException();
-				int ret = cur.var;
-				cur = cur.lo;
-				return ret;
+			public boolean[] next() {
+				if(dfsLocation == null) throw new NoSuchElementException("No more satisfying solutions!");
+				
+				for(int i = 0; i < solution.length; ++i) solution[i] = nextSolution[i];
+				findNextSolution();
+				
+				return solution;
+			}
+			
+			private void findNextSolution(){
+				if(stack.isEmpty()){
+					dfsLocation = null;
+				}else{
+					dfsLocation = stack.pop();
+					
+					while(dfsLocation.var >= 0){
+						// Lo is non-null and unvisited in the current stack
+						if(dfsLocation.lo != null && dfsLocation.lo.visitStatus == UNVISITED){
+							nextSolution[dfsLocation.var] = false;
+							dfsLocation.lo.visitStatus = VISITED_LO;
+							stack.push(dfsLocation);
+							dfsLocation = dfsLocation.lo;
+						}
+						// Hi is non-null and unvisited in the current stack
+						else if(dfsLocation.hi != null && dfsLocation.hi.visitStatus != VISITED_HI){
+							nextSolution[dfsLocation.var] = true;
+							dfsLocation.hi.visitStatus = VISITED_HI;
+							stack.push(dfsLocation);
+							dfsLocation = dfsLocation.hi;
+						}
+						// No more children to visit. Go back to parent
+						else{
+							if(dfsLocation.lo != null) dfsLocation.lo.visitStatus = UNVISITED;
+							if(dfsLocation.hi != null) dfsLocation.hi.visitStatus = UNVISITED;
+							if(stack.isEmpty()){
+								dfsLocation = null;
+								break;
+							}else{
+								dfsLocation = stack.pop();
+							}
+						}
+					}
+				}
 			}
 
 			@Override
 			public void remove() {
 				throw new UnsupportedOperationException("Operation remove() is not supported!");
 			}
-		}
-	}
-	
-	/**
-	 * Node in the shared ZDD universe graph.
-	 * @author tdeering
-	 *
-	 */
-	private final class ZDDNode{
-		int var;
-		Integer hash;
-		ZDDNode lo, hi;
-		
-		private ZDDNode(int var, ZDDNode lo, ZDDNode hi){
-			this.var = var;
-			this.lo = lo;
-			this.hi = hi;
-		}
-		
-		@Override
-		public int hashCode() {
-			if(hash == null){
-				hash = LARGE_PRIMES[0] * var ^ 
-					   (lo == null ? 0:LARGE_PRIMES[1] * lo.hashCode()) ^ 
-					   (hi == null ? 0:LARGE_PRIMES[2] * hi.hashCode());
-			}
 			
-			return hash;
-		}
-		
-		@Override
-		public boolean equals(Object obj) {
-			if (this == obj)
-				return true;
-			if (obj == null)
-				return false;
-			if (getClass() != obj.getClass())
-				return false;
-			ZDDNode other = (ZDDNode) obj;
-			if(!getOuterType().equals(other.getOuterType()))
-				return false;
-			return var == other.var && hi == other.hi && lo == other.lo;
-		}
-		
-		@Override
-		public String toString(){
-			if(this == LO) return "LO";
-			if(this == HI) return "HI";
-			return var + "(" + lo + "," + hi + ")";
-		}
-		
-		public ZDDFactory getOuterType(){
-			return ZDDFactory.this;
-		}
-	}
-	
-	/**
-	 * Used as key into the operation cache
-	 * @author tdeering
-	 *
-	 */
-	private final class ZDDOp{
-		byte op;
-		ZDDNode a, b;
-		int var;
-		public ZDDOp(byte op, ZDDNode a, ZDDNode b, int var){
-			this.op = op;
-			this.a = a;
-			this.b = b;
-			this.var = var;
-		}
-		@Override
-		public int hashCode() {
-			return (op * LARGE_PRIMES[0]) ^ a.hashCode() ^ (b == null ? 0:b.hashCode()) ^ (var * LARGE_PRIMES[1]);
-		}
-		@Override
-		public boolean equals(Object obj) {
-			if (this == obj)
-				return true;
-			if (obj == null)
-				return false;
-			if (getClass() != obj.getClass())
-				return false;
-			ZDDOp other = (ZDDOp) obj;
-			if(!getOuterType().equals(other.getOuterType()))
-				return false;
-			if(op != other.op)
-				return false;
-			if(var != other.var)
-				return false;
-			if(a == other.a && b == other.b)
-				return true;
-			// Operand order matters only for difference operation
-			return op != Operation.DIFFERENCE && a == other.b && b == other.a;
-		}
-		
-		public ZDDFactory getOuterType(){
-			return ZDDFactory.this;
+			/**
+			 * Node for iterating over satisfying solutions in variable order. Used to account for the fact that we
+			 * may have "don't care" variables.
+			 * 
+			 * Invariant: 
+			 * @author tdeering
+			 *
+			 */
+			private class IterNode{
+				int var;
+				byte visitStatus = UNVISITED;
+				IterNode lo, hi;
+
+				public IterNode(int var, DDNode lo, DDNode hi){
+					this.var = var;
+					if(var >= 0){
+						this.hi = new IterNode(hi.var, hi.lo, hi.hi);
+						if(lo != LO) this.lo = new IterNode(lo.var, lo.lo, lo.hi);
+					}
+				}
+			}
 		}
 	}
 }

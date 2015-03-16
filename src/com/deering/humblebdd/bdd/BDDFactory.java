@@ -220,7 +220,8 @@ public final class BDDFactory extends DDFactory{
 		
 		@SuppressWarnings("unused")
 		@Override
-		protected Object compute(int op, DDNode first, DDNode second) {
+		protected Object compute(int op, DDNode first, Object other) {
+			DDNode second = (DDNode) other;
 			// First is a leaf node
 			if(first.lo == null){
 				// Second is also a leaf node
@@ -282,17 +283,6 @@ public final class BDDFactory extends DDFactory{
 			return (int) apply(COUNT, ref, null) << v2i[ref.var];
 		}
 		
-		/**
-		 * Iterates over the solutions to this BDD. The returned solutions have the following meaning:
-		 * 
-		 * // One satisfying solution for the BDD 
-		 * boolean[] sat = iter.next();
-		 * 
-		 * // Variable 3 has this value
-		 * boolean varThree = sat[3];
-		 * 
-		 * NOTE: The returned array is re-used by the iterator for efficiency reasons.
-		 */
 		@Override
 		public Iterator<boolean[]> iterator() {
 			return new BDDSatIterator();

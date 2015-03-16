@@ -6,7 +6,8 @@ import com.deering.humblebdd.zdd.ZDDSetPool;
 
 public class ZDDSetPoolTest {
 	public static void main(String[] args){
-		Iterator<Integer> iter = new Iterator<Integer>(){
+		// TODO correct me
+		/*Iterator<Integer> iter = new Iterator<Integer>(){
 			int i = 0;
 			@Override
 			public boolean hasNext() {
@@ -41,6 +42,6 @@ public class ZDDSetPoolTest {
 		z2.add(7);
 		
 		System.out.println(z1);
-		System.out.println(z2);
+		System.out.println(z2);*/
 	}
 }

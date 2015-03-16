@@ -2,6 +2,7 @@ package com.deering.humblebdd;
 
 
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.WeakHashMap;
 
 import com.deering.humblebdd.util.FixedSizeHashMap;
@@ -167,7 +168,7 @@ public abstract class DDFactory {
 		 * @param second
 		 * @return
 		 */
-		protected Object apply(int op, DDNode first, DDNode second){
+		protected Object apply(int op, DDNode first, Object second){
 			DDOpKey key = new DDOpKey(op, first, second);
 			Object cached = opCache.get(key);
 			if(cached == null){
@@ -213,7 +214,21 @@ public abstract class DDFactory {
 		 * @param second
 		 * @return
 		 */
-		protected abstract Object compute(int op, DDNode first, DDNode second);
+		protected abstract Object compute(int op, DDNode first, Object second);
+		
+		/**
+		 * Iterates over the satisfying solutions to this decision diagram. The returned solutions have the following meaning:
+		 * 
+		 * // One satisfying solution for the DD 
+		 * boolean[] sat = iter.next();
+		 * 
+		 * // Variable X takes this value in this solution
+		 * boolean varThree = sat[X];
+		 * 
+		 * NOTE: The returned array is re-used by the iterator for efficiency reasons.
+		 */
+		@Override
+		public abstract Iterator<boolean[]> iterator();
 	}
 	
 	/**
@@ -276,8 +291,9 @@ public abstract class DDFactory {
 	 */
 	private final class DDOpKey{
 		int op;
-		DDNode a, b;
-		public DDOpKey(int op, DDNode a, DDNode b){
+		DDNode a;
+		Object b;
+		public DDOpKey(int op, DDNode a, Object b){
 			this.op = op;
 			this.a = a;
 			this.b = b;
