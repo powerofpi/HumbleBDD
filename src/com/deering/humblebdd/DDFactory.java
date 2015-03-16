@@ -94,6 +94,15 @@ public abstract class DDFactory {
 	}
 	
 	/**
+	 * Returns the current size of the backing graph.
+	 * @return
+	 */
+	public int size(){
+		System.gc();
+		return ddNodes.keySet().size();
+	}
+	
+	/**
 	 * Return the shared node which represents the given variable and has exactly
 	 * the given lo and hi children.
 	 * 
