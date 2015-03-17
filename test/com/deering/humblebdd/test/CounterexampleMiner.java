@@ -3,9 +3,11 @@ package com.deering.humblebdd.test;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 
 import com.deering.humblebdd.zdd.ZDDFactory;
 import com.deering.humblebdd.zdd.ZDDFactory.ZDD;
+import com.google.common.math.BigIntegerMath;
 
 public class CounterexampleMiner {
 	public static void main(String[] args) throws InterruptedException{
@@ -22,6 +24,11 @@ public class CounterexampleMiner {
 	 * The power set of the universe.
 	 */
 	private int[][] powerSet;
+	
+	/**
+	 * Flags for each 
+	 */
+	private BitSet examined;
 	
 	/**
 	 * The number of elements in the universe
@@ -45,6 +52,7 @@ public class CounterexampleMiner {
 		System.out.println("Computing sizes of choose buckets");
 		int numSets = 1 << universeSize;
 		powerSet = new int[numSets][];
+		examined = new BitSet(1 << numSets);
 		chooseBuckets = new BigInteger[numSets + 1];
 		for(int i = 0; i <= numSets; ++i){
 			if(i < numSets){
@@ -56,11 +64,11 @@ public class CounterexampleMiner {
 				}
 			}
 			
-			chooseBuckets[i] = choose(numSets, i);
+			chooseBuckets[i] = BigIntegerMath.binomial(numSets, i);
 		}
 		
 		System.out.println("Assigning famlies to threads");
-		BigInteger numFamilies = BigInteger.valueOf(2).shiftLeft(numSets);
+		BigInteger numFamilies = BigInteger.ONE.shiftLeft(numSets);
 		int numCPUs = Runtime.getRuntime().availableProcessors();
 		Miner[] jobs = new Miner[numCPUs];
 		ArrayList<Thread> running = new ArrayList<Thread>(numCPUs);
@@ -88,7 +96,8 @@ public class CounterexampleMiner {
 				running.remove(0);
 			}
 		}
-		
+
+		// Find the counterexample, if there is one
 		Miner example = null;
 		for(Miner oe : jobs){
 			if(oe.heuristicZDD != null){
@@ -98,6 +107,10 @@ public class CounterexampleMiner {
 		}
 		
 		if(example == null){
+			// Ensure that all families were examined
+			if(examined.cardinality() != examined.size())
+				throw new RuntimeException("Not all families were examined!");
+			
 			System.out.println("Unable to find a counterexample");
 		}else{
 			System.out.println("Found counterexample!");
@@ -149,17 +162,26 @@ public class CounterexampleMiner {
 	private void buildFamily(BigInteger comboIdx, int[][] family, int n, int k, int powerSetIdx){
 		if(n == 0 || k == 0) return;
 		
-		// Split the number of remaining choices into two subgroups
-		// Those which choose the next power set element
-		BigInteger include = choose(n-1, k-1);
-		// Those which do not
-		BigInteger dontInclude = choose(n-1, k);
-		
-		if(comboIdx.compareTo(include) < 0){
-			family[family.length - k] = powerSet[powerSetIdx];
-			buildFamily(comboIdx.subtract(dontInclude), family, n - 1, k - 1, powerSetIdx + 1);
-		}else{
-			buildFamily(comboIdx.subtract(include), family, n - 1, k, powerSetIdx + 1);
+		// We must choose all remaining sets from the power set
+		if(k < n){
+			// Split the number of remaining choices into two subgroups
+			// Those which choose the next power set element
+			BigInteger include = BigIntegerMath.binomial(n-1, k-1);
+			// Those which do not
+			BigInteger dontInclude = BigIntegerMath.binomial(n-1, k);
+			
+			if(comboIdx.compareTo(include) < 0){
+				family[family.length - k] = powerSet[powerSetIdx];
+				buildFamily(comboIdx.subtract(dontInclude), family, n - 1, k - 1, powerSetIdx + 1);
+			}else{
+				buildFamily(comboIdx.subtract(include), family, n - 1, k, powerSetIdx + 1);
+			}
+		}
+		// We may potentially not choose this set from the power set
+		else{
+			for(int i = 0; i < k; ++i){
+				family[family.length - i - 1] = powerSet[powerSetIdx + i];
+			}
 		}
 	}
 	
@@ -185,6 +207,8 @@ public class CounterexampleMiner {
 		public void run() {
 			// Iterate over all assigned families
 			for(BigInteger familyID = firstFamily; heuristicZDD == null && familyID.compareTo(lastFamily) <= 0; familyID = familyID.add(BigInteger.ONE)){
+				examined.set(familyID.intValue());
+				
 				// Construct the family for the given identifier
 				int[][] family = constructFamily(familyID);
 				
@@ -241,22 +265,6 @@ public class CounterexampleMiner {
 		sb.append(']');
 	
 		return sb.toString();
-	}
-
-	private static BigInteger choose(int n, int k){
-		return factorial(BigInteger.valueOf(n)).divide(
-				factorial(BigInteger.valueOf(n-k)).multiply(factorial(BigInteger.valueOf(k))));
-	}
-	
-	public static BigInteger factorial(BigInteger n) {
-	    BigInteger result = BigInteger.ONE;
-
-	    while (!n.equals(BigInteger.ZERO)) {
-	        result = result.multiply(n);
-	        n = n.subtract(BigInteger.ONE);
-	    }
-
-	    return result;
 	}
 
 	private static class FrequencyCount implements Comparable<FrequencyCount> {
