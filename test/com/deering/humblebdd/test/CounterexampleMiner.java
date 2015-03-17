@@ -26,11 +26,6 @@ public class CounterexampleMiner {
 	private int[][] powerSet;
 	
 	/**
-	 * Flags for each 
-	 */
-	private BitSet examined;
-	
-	/**
 	 * The number of elements in the universe
 	 */
 	private int universeSize;
@@ -52,7 +47,6 @@ public class CounterexampleMiner {
 		System.out.println("Computing sizes of choose buckets");
 		int numSets = 1 << universeSize;
 		powerSet = new int[numSets][];
-		examined = new BitSet(1 << numSets);
 		chooseBuckets = new BigInteger[numSets + 1];
 		for(int i = 0; i <= numSets; ++i){
 			if(i < numSets){
@@ -107,10 +101,6 @@ public class CounterexampleMiner {
 		}
 		
 		if(example == null){
-			// Ensure that all families were examined
-			if(examined.cardinality() != examined.size())
-				throw new RuntimeException("Not all families were examined!");
-			
 			System.out.println("Unable to find a counterexample");
 		}else{
 			System.out.println("Found counterexample!");
@@ -206,9 +196,7 @@ public class CounterexampleMiner {
 		@Override
 		public void run() {
 			// Iterate over all assigned families
-			for(BigInteger familyID = firstFamily; heuristicZDD == null && familyID.compareTo(lastFamily) <= 0; familyID = familyID.add(BigInteger.ONE)){
-				examined.set(familyID.intValue());
-				
+			for(BigInteger familyID = firstFamily; heuristicZDD == null && familyID.compareTo(lastFamily) <= 0; familyID = familyID.add(BigInteger.ONE)){				
 				// Construct the family for the given identifier
 				int[][] family = constructFamily(familyID);
 				
