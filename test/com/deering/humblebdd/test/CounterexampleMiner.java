@@ -4,8 +4,6 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
 
-import javafx.concurrent.Worker.State;
-
 import com.deering.humblebdd.zdd.ZDDFactory;
 import com.deering.humblebdd.zdd.ZDDFactory.ZDD;
 
