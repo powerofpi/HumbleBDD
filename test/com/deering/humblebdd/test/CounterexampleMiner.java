@@ -3,29 +3,47 @@ package com.deering.humblebdd.test;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Random;
-import java.util.Set;
 
 import javafx.concurrent.Worker.State;
 
 import com.deering.humblebdd.zdd.ZDDFactory;
 import com.deering.humblebdd.zdd.ZDDFactory.ZDD;
 
-public class KothariTest {
+public class CounterexampleMiner {
+	public static void main(String[] args) throws InterruptedException{
+		CounterexampleMiner kt = new CounterexampleMiner(Integer.parseInt(args[0]));
+		kt.runTest();
+	}
+	
 	/**
 	 * Number of families in each bucket of families.
 	 */
-	private static BigInteger[] chooseBuckets;
+	private BigInteger[] chooseBuckets;
 	
 	/**
 	 * The power set of the universe.
 	 */
-	private static int[][] powerSet;
+	private int[][] powerSet;
 	
-	public static void main(String[] args) throws InterruptedException{
-		int universeSize = Integer.parseInt(args[0]);
-
+	/**
+	 * The number of elements in the universe
+	 */
+	private int universeSize;
+	
+	/**
+	 * Construct a new test on the universe of the given size.
+	 * @param universeSize
+	 */
+	public CounterexampleMiner(int universeSize){
+		this.universeSize = universeSize;
+	}
+	
+	/**
+	 * Run the test, searching for a counterexample to our rule.
+	 * 
+	 * @throws InterruptedException
+	 */
+	private void runTest() throws InterruptedException{
 		System.out.println("Computing sizes of choose buckets");
 		int numSets = 1 << universeSize;
 		powerSet = new int[numSets][];
@@ -46,7 +64,7 @@ public class KothariTest {
 		System.out.println("Assigning famlies to threads");
 		BigInteger numFamilies = BigInteger.valueOf(2).shiftLeft(numSets);
 		int numCPUs = Runtime.getRuntime().availableProcessors();
-		OrderExplorer[] jobs = new OrderExplorer[numCPUs];
+		Miner[] jobs = new Miner[numCPUs];
 		ArrayList<Thread> running = new ArrayList<Thread>(numCPUs);
 		BigInteger workPerThread = numFamilies.divide(BigInteger.valueOf(numCPUs));
 		BigInteger remainder = numFamilies.mod(BigInteger.valueOf(numCPUs));
@@ -55,8 +73,9 @@ public class KothariTest {
 			BigInteger first = workPerThread.multiply(rank);
 			first = first.add(rank.compareTo(remainder) < 0 ? rank:remainder);
 			BigInteger last = first.add(workPerThread).subtract(BigInteger.ONE);
+			if(rank.compareTo(remainder) <= 0) last = last.add(BigInteger.ONE);
 			
-			jobs[i] = new OrderExplorer(first, last, universeSize);
+			jobs[i] = new Miner(first, last);
 			Thread t = new Thread(jobs[i]);
 			running.add(t);
 			t.start();
@@ -65,16 +84,15 @@ public class KothariTest {
 		// Wait for all explorer threads to complete
 		System.out.println("Waiting for threads to finish exploring families");
 		while(!running.isEmpty()){
-			Thread t = running.get(0);
-			if(State.RUNNING.equals(t.getState())){
+			if(running.get(0).isAlive()){
 				Thread.sleep(1000);
 			}else{
 				running.remove(0);
 			}
 		}
 		
-		OrderExplorer example = null;
-		for(OrderExplorer oe : jobs){
+		Miner example = null;
+		for(Miner oe : jobs){
 			if(oe.heuristicZDD != null){
 				example = oe;
 				break;
@@ -96,13 +114,19 @@ public class KothariTest {
 		}
 	}
 	
-	private static int[][] constructFamily(BigInteger id){
+	/**
+	 * Given a family identifier (between 0 and 2^2^N), construct the specific family.
+	 * 
+	 * @param id
+	 * @return
+	 */
+	private int[][] constructFamily(BigInteger id){
 		if(BigInteger.ZERO.equals(id)) return new int[0][];
 		
 		// Determine the cardinality of the family
 		BigInteger cumulative = BigInteger.ONE;
 		int m = 1;
-		while(id.compareTo(cumulative) >= 0){
+		while(id.compareTo(cumulative) >= 0 && m < chooseBuckets.length - 1){
 			cumulative = cumulative.add(chooseBuckets[++m]); 
 		}
 		
@@ -115,7 +139,16 @@ public class KothariTest {
 		return family;
 	}
 	
-	private static void buildFamily(BigInteger choiceIdx, int[][] family, int n, int k, int powerSetIdx){
+	/**
+	 * Recursively build a family of sets based on a combination index.
+	 * 
+	 * @param comboIdx Index of the combination within the remaining combinations
+	 * @param family Family of sets that we're building
+	 * @param n Remaining sets to choose from
+	 * @param k Remaining number of sets to choose
+	 * @param powerSetIdx Index in the power set from which to choose or not choose our next set
+	 */
+	private void buildFamily(BigInteger comboIdx, int[][] family, int n, int k, int powerSetIdx){
 		if(n == 0 || k == 0) return;
 		
 		// Split the number of remaining choices into two subgroups
@@ -124,45 +157,43 @@ public class KothariTest {
 		// Those which do not
 		BigInteger dontInclude = choose(n-1, k);
 		
-		if(choiceIdx.compareTo(include) < 0){
-			family[family.length - k - 1] = powerSet[powerSetIdx];
-			buildFamily(choiceIdx.subtract(dontInclude), family, n - 1, k - 1, powerSetIdx + 1);
+		if(comboIdx.compareTo(include) < 0){
+			family[family.length - k] = powerSet[powerSetIdx];
+			buildFamily(comboIdx.subtract(dontInclude), family, n - 1, k - 1, powerSetIdx + 1);
 		}else{
-			buildFamily(choiceIdx.subtract(include), family, n - 1, k, powerSetIdx + 1);
+			buildFamily(comboIdx.subtract(include), family, n - 1, k, powerSetIdx + 1);
 		}
 	}
 	
-	private static class OrderExplorer implements Runnable{
+	/**
+	 * Worker thread to explore a subset of families, searching for a counterexample.
+	 * 
+	 * @author tdeering
+	 *
+	 */
+	private class Miner implements Runnable{
 		BigInteger firstFamily, lastFamily;
-		int universeSize;
 		
 		ZDD heuristicZDD = null;
 		ZDD optimalZDD = null;
 		int[][] counterFamily = null;
 		
-		public OrderExplorer(BigInteger firstFamily, BigInteger lastFamily, int universeSize){
+		public Miner(BigInteger firstFamily, BigInteger lastFamily){
 			this.firstFamily = firstFamily;
 			this.lastFamily = lastFamily;
-			this.universeSize = universeSize;
 		}
 
 		@Override
 		public void run() {
 			// Iterate over all assigned families
 			for(BigInteger familyID = firstFamily; heuristicZDD == null && familyID.compareTo(lastFamily) <= 0; familyID = familyID.add(BigInteger.ONE)){
-				// Construct the family
+				// Construct the family for the given identifier
 				int[][] family = constructFamily(familyID);
-				FrequencyCount[] frequencyCounts = new FrequencyCount[universeSize];
-				for(int i = 0; i < universeSize; ++i) frequencyCounts[i] = new FrequencyCount(i);
-				
-				// Determine N, the number of variables in the family
-				for(int[] set : family){
-					for(int i : set){
-						++frequencyCounts[i].count;
-					}
-				}
 				
 				// Get the element order in decreasing frequency
+				FrequencyCount[] frequencyCounts = new FrequencyCount[universeSize];
+				for(int i = 0; i < universeSize; ++i) frequencyCounts[i] = new FrequencyCount(i);
+				for(int[] set : family) for(int i : set) ++frequencyCounts[i].count;
 				Arrays.sort(frequencyCounts);
 				int[] decreasingFrequency = toOrder(frequencyCounts);
 				
@@ -213,16 +244,6 @@ public class KothariTest {
 	
 		return sb.toString();
 	}
-	
-/*	private static void shuffle(int[] arr, Random rand){
-		int tmp;
-		for(int i = 0; i < arr.length; ++i){
-			int newIdx = rand.nextInt(arr.length);
-			tmp = arr[newIdx];
-			arr[newIdx] = arr[i];
-			arr[i] = tmp;
-		}
-	}*/
 
 	private static BigInteger choose(int n, int k){
 		return factorial(BigInteger.valueOf(n)).divide(
