@@ -1,9 +1,19 @@
 package com.deering.humblebdd;
 
 
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.WeakHashMap;
+
+import org.jgrapht.Graph;
+import org.jgrapht.ext.DOTExporter;
+import org.jgrapht.ext.EdgeNameProvider;
+import org.jgrapht.ext.VertexNameProvider;
+import org.jgrapht.graph.DirectedPseudograph;
 
 import com.deering.humblebdd.util.FixedSizeHashMap;
 
@@ -80,7 +90,7 @@ public abstract class DDFactory {
 		}
 		
 		this.LO = new DDNode(-1, null, null);
-		this.HI = new DDNode(-1, null, null);
+		this.HI = new DDNode(-2, null, null);
 		this.ddNodes = new WeakHashMap<DDNode, DDNode>();
 		this.opCache = new FixedSizeHashMap<DDOpKey, Object>(operatorCacheSize);
 	}
@@ -238,6 +248,100 @@ public abstract class DDFactory {
 		 */
 		@Override
 		public abstract Iterator<boolean[]> iterator();
+		
+		/**
+		 * Exports this DD as a DOT file so that tools such as GraphViz can visualize it.
+		 * To convert to another format, such as PNG, on Linux, subsequently run:
+		 * 
+		 * dot -Tpng exported.dot > exported.png
+		 * 
+		 * 
+		 * @throws IOException 
+		 */
+		public void exportDOT(String path) throws IOException{
+			final Map<DDNode, Integer> idMap = new HashMap<DDNode, Integer>();
+			
+			DOTExporter<DDNode, DDEdge> exporter = new DOTExporter<DDNode, DDEdge>(
+               new VertexNameProvider<DDNode>(){
+				@Override
+				public String getVertexName(DDNode arg0) {
+					Integer id = idMap.get(arg0);
+					if(id == null){
+						id = idMap.size();
+						idMap.put(arg0, id);
+					}
+					return id.toString();
+				}
+			}, new VertexNameProvider<DDNode>(){
+				@Override
+				public String getVertexName(DDNode arg0) {
+					if(arg0 == LO) return "F";
+					if(arg0 == HI) return "T";
+					return Integer.toString(arg0.var);
+				}
+			}, new EdgeNameProvider<DDEdge>(){
+				@Override
+				public String getEdgeName(DDEdge arg0) {
+					return arg0.hi ? "T":"F";
+				}
+			});
+			Graph<DDNode, DDEdge> graph = new DirectedPseudograph<DDNode, DDEdge>(DDEdge.class);
+			createGraph(ref, graph);
+			FileWriter writer = new FileWriter(path);
+			exporter.export(writer, graph);
+		}
+		
+		private void createGraph(DDNode current, Graph<DDNode, DDEdge> graph){
+			graph.addVertex(current);
+			if(current.var >= 0){
+				createGraph(current.lo, graph);
+				graph.addEdge(current, current.lo, new DDEdge(current, false));
+				createGraph(current.hi, graph);
+				graph.addEdge(current, current.hi, new DDEdge(current, true));
+			}
+		}
+	}
+	
+	private class DDEdge{
+		DDNode origin;
+		boolean hi;
+		public DDEdge(DDNode origin, boolean hi){
+			this.origin = origin;
+			this.hi = hi;
+		}
+		@Override
+		public int hashCode() {
+			final int prime = 31;
+			int result = 1;
+			result = prime * result + getOuterType().hashCode();
+			result = prime * result + (hi ? 1231 : 1237);
+			result = prime * result
+					+ ((origin == null) ? 0 : origin.hashCode());
+			return result;
+		}
+		@Override
+		public boolean equals(Object obj) {
+			if (this == obj)
+				return true;
+			if (obj == null)
+				return false;
+			if (getClass() != obj.getClass())
+				return false;
+			DDEdge other = (DDEdge) obj;
+			if (!getOuterType().equals(other.getOuterType()))
+				return false;
+			if (hi != other.hi)
+				return false;
+			if (origin == null) {
+				if (other.origin != null)
+					return false;
+			} else if (!origin.equals(other.origin))
+				return false;
+			return true;
+		}
+		private DDFactory getOuterType() {
+			return DDFactory.this;
+		}
 	}
 	
 	/**
