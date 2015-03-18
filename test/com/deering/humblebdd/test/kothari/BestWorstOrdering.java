@@ -3,6 +3,7 @@ package com.deering.humblebdd.test.kothari;
 import java.io.IOException;
 import java.util.Arrays;
 
+import com.deering.humblebdd.DDFactory.ExportFormat;
 import com.deering.humblebdd.zdd.ZDDFactory;
 import com.deering.humblebdd.zdd.ZDDFactory.ZDD;
 
@@ -40,10 +41,10 @@ public class BestWorstOrdering {
 		System.out.println("Best Size: " + bestSize);
 		System.out.println("Worst Order: " + Arrays.toString(worst.getFactory().getOrdering()));
 		System.out.println("Worst Size: " + worstSize);
-		String bestPath = "/Users/kothari/best.dot";
-		String worstPath = "/Users/kothari/worst.dot";
-		best.exportDOT(bestPath);
-		worst.exportDOT(worstPath);
+		String bestPath = "/Users/kothari/best.pdf";
+		String worstPath = "/Users/kothari/worst.pdf";
+		best.exportDiagram(bestPath, ExportFormat.PDF);
+		worst.exportDiagram(worstPath, ExportFormat.PDF);
 		System.out.println("Best ZDD exported to " + bestPath);
 		System.out.println("Worst ZDD exported to " + worstPath);
 	}
