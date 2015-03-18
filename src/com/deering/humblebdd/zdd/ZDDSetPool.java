@@ -1,16 +1,5 @@
 package com.deering.humblebdd.zdd;
 
-import java.lang.reflect.Array;
-import java.util.Collection;
-import java.util.ConcurrentModificationException;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.NoSuchElementException;
-import java.util.Set;
-
-import com.deering.humblebdd.HumbleException;
-import com.deering.humblebdd.zdd.ZDDFactory.ZDD;
 
 /**
  * A pool of ZDD sets implemented backed by the same ZDDFactory.

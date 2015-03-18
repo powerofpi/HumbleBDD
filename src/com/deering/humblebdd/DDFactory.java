@@ -3,7 +3,6 @@ package com.deering.humblebdd;
 
 import graphviz.GraphViz;
 
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.io.Writer;
