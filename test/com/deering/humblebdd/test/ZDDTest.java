@@ -16,7 +16,8 @@ public class ZDDTest {
 		ZDD z = f.family(new int[][]{{0},{0,1},{0,1,2},{0,1,2,3}});
 		System.out.println(z);
 		System.out.println("Count: " + z.count());
-		System.out.println("Size: " + f.size());
+		System.out.println("Effective Size: " + f.effectiveSize());
+		System.out.println("Universe Size: " + f.universeSize());
 		for(boolean[] sol : z) System.out.println(Arrays.toString(sol));
 		z.exportDiagram("/home/tdeering/test.pdf", ExportFormat.PDF);
 	}

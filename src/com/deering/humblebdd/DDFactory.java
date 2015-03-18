@@ -9,8 +9,10 @@ import java.io.Writer;
 import java.lang.ref.WeakReference;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 import java.util.WeakHashMap;
 
 import org.jgrapht.Graph;
@@ -45,6 +47,11 @@ public abstract class DDFactory {
 	 * Nodes of the shared graph.
 	 */
 	private WeakHashMap<DDNode, WeakReference<DDNode>> ddNodes; 
+	
+	/**
+	 * Weak references to all decision diagrams.
+	 */
+	private WeakHashMap<DD, WeakReference<DD>> diagrams;
 	
 	/**
 	 * Cache of BDD operation results
@@ -97,6 +104,7 @@ public abstract class DDFactory {
 		this.LO = new DDNode(-1, null, null);
 		this.HI = new DDNode(-2, null, null);
 		this.ddNodes = new WeakHashMap<DDNode, WeakReference<DDNode>>();
+		this.diagrams = new WeakHashMap<DD, WeakReference<DD>>();
 		this.opCache = new FixedSizeHashMap<DDOpKey, Object>(operatorCacheSize);
 	}
 	
@@ -150,12 +158,54 @@ public abstract class DDFactory {
 	}
 	
 	/**
-	 * Returns the current size of the backing graph.
+	 * Returns the current size of the backing graph. Includes nodes referred to
+	 * directly or transitively by a decision diagram, AS WELL AS nodes referred
+	 * to by the operator cache. In other words, this size is influenced by the 
+	 * operator cache and is the true size of the universe graph.
+	 * 
 	 * @return
 	 */
-	public int size(){
+	public int universeSize(){
 		System.gc();
 		return ddNodes.keySet().size();
+	}
+	
+	/**
+	 * Returns the current size of the backing graph. Includes nodes referred to
+	 * directly or transitively by a decision diagram, BUT NOT nodes referred
+	 * to by the operator cache only. In other words, this size is not influenced by
+	 * the operator cache (it's as if the cache were of size 0).
+	 * 
+	 * @return
+	 */
+	public int effectiveSize(){
+		System.gc();
+
+		int allNodes = ddNodes.keySet().size();
+		// Store the results of our forward BFS
+		Set<DDNode> traversed = new HashSet<DDNode>(allNodes);
+		
+		// Let the frontier initially contain the nodes referred to by decision diagrams
+		Set<DDNode> frontier = new HashSet<DDNode>(allNodes);
+		for(DD diagram : diagrams.keySet()) frontier.add(diagram.ref);
+		
+		// BFS
+		while(!frontier.isEmpty()){
+			// Pop the next node from the frontier
+			Iterator<DDNode> iter = frontier.iterator();
+			DDNode next = iter.next();
+			iter.remove();
+			
+			// If this is the first time the node has been traversed
+			if(next.var >= 0 && traversed.add(next)){
+				// Add its children to the frontier if they haven't been traversed yet
+				if(!traversed.contains(next.lo)) frontier.add(next.lo);
+				if(!traversed.contains(next.hi)) frontier.add(next.hi);
+			}
+		}
+		
+		// Return the number of nodes reachable starting from decision diagrams
+		return traversed.size();
 	}
 	
 	/**
@@ -221,6 +271,7 @@ public abstract class DDFactory {
 		 */
 		protected DD(DDNode ref){
 			this.ref = ref;
+			diagrams.put(this, new WeakReference<DD>(this));
 		}
 		
 		/**
