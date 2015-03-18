@@ -6,6 +6,7 @@ import graphviz.GraphViz;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.io.Writer;
+import java.lang.ref.WeakReference;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -43,7 +44,7 @@ public abstract class DDFactory {
 	/**
 	 * Nodes of the shared graph.
 	 */
-	private WeakHashMap<DDNode, DDNode> ddNodes; 
+	private WeakHashMap<DDNode, WeakReference<DDNode>> ddNodes; 
 	
 	/**
 	 * Cache of BDD operation results
@@ -95,7 +96,7 @@ public abstract class DDFactory {
 		
 		this.LO = new DDNode(-1, null, null);
 		this.HI = new DDNode(-2, null, null);
-		this.ddNodes = new WeakHashMap<DDNode, DDNode>();
+		this.ddNodes = new WeakHashMap<DDNode, WeakReference<DDNode>>();
 		this.opCache = new FixedSizeHashMap<DDOpKey, Object>(operatorCacheSize);
 	}
 	
@@ -118,7 +119,7 @@ public abstract class DDFactory {
 			throw new HumbleException("New ordering should be of the same length as the previous ordering");
 		sanitizeOrdering(newOrdering);
 		
-		// Same ordering we already had? No work to be done.
+		// Same ordering we already have? No work to be done.
 		if(Arrays.equals(i2v, newOrdering)) return;
 		
 		// Create new mappings between order indices and variable labels
@@ -128,6 +129,9 @@ public abstract class DDFactory {
 			newI2V[i] = newOrdering[i];
 			newV2I[newI2V[i]] = i;
 		}
+		
+		// TODO create a factory with the new ordering
+		// TODO create correspondence 
 		
 		// TODO the real work
 	}
@@ -177,12 +181,12 @@ public abstract class DDFactory {
 
 		// Node sharing
 		DDNode key = new DDNode(var, lo, hi);
-		DDNode sharedNode = ddNodes.get(key);
+		WeakReference<DDNode> sharedNode = ddNodes.get(key);
 		if(sharedNode == null){
-			sharedNode = key;
-			ddNodes.put(sharedNode, sharedNode);
+			sharedNode = new WeakReference<DDNode>(key);
+			ddNodes.put(key, sharedNode);
 		}
-		return sharedNode;
+		return sharedNode.get();
 	}
 	
 	/**
