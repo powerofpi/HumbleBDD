@@ -197,11 +197,6 @@ public final class ZDDFactory extends DDFactory{
 	 */
 	public final class ZDD extends DD{
 		/**
-		 * Head node of this ZDD in the shared ZDD graph.
-		 */
-		private DDNode ref;
-		
-		/**
 		 * Creates a ZDD represented by the given node of the given factory. 
 		 * 
 		 * USERS: Do not directly construct. Use ZDDFactory or operations of another ZDD.
@@ -210,7 +205,6 @@ public final class ZDDFactory extends DDFactory{
 		 */
 		private ZDD(DDNode ref){
 			super(ref);
-			this.ref = ref;
 		}
 		
 		/**
