@@ -3,6 +3,7 @@ package com.deering.humblebdd.test;
 import java.io.IOException;
 import java.util.Arrays;
 
+import com.deering.humblebdd.DDFactory.ExportFormat;
 import com.deering.humblebdd.zdd.ZDDFactory;
 import com.deering.humblebdd.zdd.ZDDFactory.ZDD;
 
@@ -17,6 +18,6 @@ public class ZDDTest {
 		System.out.println("Count: " + z.count());
 		System.out.println("Size: " + f.size());
 		for(boolean[] sol : z) System.out.println(Arrays.toString(sol));
-		z.exportDOT("/home/tdeering/test.dot");
+		z.exportDiagram("/home/tdeering/test.pdf", ExportFormat.PDF);
 	}
 }

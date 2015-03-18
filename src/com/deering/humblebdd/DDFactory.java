@@ -1,8 +1,12 @@
 package com.deering.humblebdd;
 
 
+import graphviz.GraphViz;
+
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.StringWriter;
+import java.io.Writer;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -23,6 +27,15 @@ import com.deering.humblebdd.util.FixedSizeHashMap;
  *
  */
 public abstract class DDFactory {
+	/**
+	 * Defines the formats 
+	 * @author tdeering
+	 *
+	 */
+	public static enum ExportFormat{
+		DOT,FIG,GIF,PDF,PS,SVG,PNG,PLAIN;
+	}
+	
 	/**
 	 * Large prime numbers for hashing.
 	 */
@@ -72,16 +85,8 @@ public abstract class DDFactory {
 	 * @param varOrdering
 	 */
 	public DDFactory(int[] varOrdering, int operatorCacheSize){
-		int[] counts = new int[varOrdering.length];
-		for(int i : varOrdering){
-			try{
-				if(++counts[i] > 1){
-					throw new HumbleException("Same variable " + i + " appeared multiple times in variable ordering!");
-				}
-			}catch(ArrayIndexOutOfBoundsException e){
-				throw new HumbleException("Variables in ordering must be 0 to ordering.length - 1. Got " + i, e);
-			}
-		}
+		// Error checking
+		sanitizeOrdering(varOrdering);
 		this.i2v = new int[varOrdering.length];
 		this.v2i = new int[varOrdering.length];
 		for(int i=0; i < varOrdering.length; i++){
@@ -101,6 +106,44 @@ public abstract class DDFactory {
 	 */
 	public int[] getOrdering(){
 		return Arrays.copyOf(v2i, v2i.length);
+	}
+	
+	/**
+	 * Reorders the DD with respect to the new ordering.
+	 * 
+	 * @param newOrdering
+	 */
+	public void reorder(int[] newOrdering){
+		// Error checking
+		if(i2v.length != newOrdering.length)
+			throw new HumbleException("New ordering should be of the same length as the previous ordering");
+		sanitizeOrdering(newOrdering);
+		
+		// Same ordering we already had? No work to be done.
+		if(Arrays.equals(i2v, newOrdering)) return;
+		
+		// Create new mappings between order indices and variable labels
+		int[] newI2V = new int[newOrdering.length];
+		int[] newV2I = new int[newOrdering.length];
+		for(int i=0; i < newOrdering.length; i++){
+			newI2V[i] = newOrdering[i];
+			newV2I[newI2V[i]] = i;
+		}
+		
+		// TODO the real work
+	}
+	
+	private void sanitizeOrdering(int[] ordering){
+		int[] counts = new int[ordering.length];
+		for(int i : ordering){
+			try{
+				if(++counts[i] > 1){
+					throw new HumbleException("Same variable " + i + " appeared multiple times in variable ordering!");
+				}
+			}catch(ArrayIndexOutOfBoundsException e){
+				throw new HumbleException("Variables in ordering must be 0 to ordering.length - 1. Got " + i, e);
+			}
+		}
 	}
 	
 	/**
@@ -250,15 +293,52 @@ public abstract class DDFactory {
 		public abstract Iterator<boolean[]> iterator();
 		
 		/**
-		 * Exports this DD as a DOT file so that tools such as GraphViz can visualize it.
-		 * To convert to another format, such as PNG, on Linux, subsequently run:
-		 * 
-		 * dot -Tpng exported.dot > exported.png
-		 * 
+		 * Exports this DD to a file of the requested format using Graphviz (must be installed).
 		 * 
 		 * @throws IOException 
 		 */
-		public void exportDOT(String path) throws IOException{
+		public void exportDiagram(String path, ExportFormat format) throws IOException{
+			String type = null;
+			switch(format){
+			case DOT:
+				type = "dot";
+				break;
+			case FIG:
+				type = "fig";
+				break;
+			case GIF:
+				type = "gif";
+				break;
+			case PDF:
+				type = "pdf";
+				break;
+			case PLAIN:
+				type = "plain";
+				break;
+			case PNG:
+				type = "png";
+				break;
+			case PS:
+				type = "ps";
+				break;
+			case SVG:
+				type = "svg";
+				break;
+			default:
+				throw new HumbleException("Unknown export format: " + format);
+			}
+			
+			StringWriter writer = new StringWriter();
+			exportDOT(writer);
+			GraphViz gv = new GraphViz();
+			gv.writeGraphToFile(gv.getGraph(writer.toString(), type), path);
+		}
+		
+		/**
+		 * Writes a DOT graph for this DD to the given writer.
+		 * @param writer
+		 */
+		private void exportDOT(Writer writer){
 			final Map<DDNode, Integer> idMap = new HashMap<DDNode, Integer>();
 			
 			DOTExporter<DDNode, DDEdge> exporter = new DOTExporter<DDNode, DDEdge>(
@@ -287,7 +367,6 @@ public abstract class DDFactory {
 			});
 			Graph<DDNode, DDEdge> graph = new DirectedPseudograph<DDNode, DDEdge>(DDEdge.class);
 			createGraph(ref, graph);
-			FileWriter writer = new FileWriter(path);
 			exporter.export(writer, graph);
 		}
 		
