@@ -23,7 +23,7 @@ public class BestWorstOrdering {
 			ZDDFactory f = new ZDDFactory(ordering, 10000);
 			ZDD z = f.family(family);
 			
-			int size = f.size();
+			int size = f.effectiveSize();
 			
 			if(best == null || size < bestSize){
 				best = z;

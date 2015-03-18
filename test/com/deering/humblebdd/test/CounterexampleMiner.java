@@ -3,7 +3,6 @@ package com.deering.humblebdd.test;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.BitSet;
 
 import com.deering.humblebdd.zdd.ZDDFactory;
 import com.deering.humblebdd.zdd.ZDDFactory.ZDD;
@@ -106,10 +105,10 @@ public class CounterexampleMiner {
 			System.out.println("Found counterexample!");
 			System.out.println("Universe size: " + universeSize);
 			System.out.println("Family: " + twoDimArrayString(example.counterFamily));
-			System.out.println("Heuristic Size: " + example.heuristicZDD.getFactory().size());
+			System.out.println("Heuristic Size: " + example.heuristicZDD.getFactory().effectiveSize());
 			System.out.println("Heuristic Order: " + Arrays.toString(example.heuristicZDD.getFactory().getOrdering()));
 			System.out.println("Heuristic ZDD: " + example.heuristicZDD);
-			System.out.println("Optimal Size: " + example.optimalZDD.getFactory().size());
+			System.out.println("Optimal Size: " + example.optimalZDD.getFactory().effectiveSize());
 			System.out.println("Optimal Order: " + Arrays.toString(example.optimalZDD.getFactory().getOrdering()));
 			System.out.println("Optimal ZDD: " + example.optimalZDD);
 		}
@@ -219,13 +218,13 @@ public class CounterexampleMiner {
 					ZDDFactory testFactory = new ZDDFactory(permuted, 1000);
 					ZDD test = testFactory.family(family);
 					
-					if(optimal == null || testFactory.size() < optimal.getFactory().size()){
+					if(optimal == null || testFactory.effectiveSize() < optimal.getFactory().effectiveSize()){
 						optimal = test;
 					}
 				}
 				
 				// If we find a counterexample, we're done.
-				if(heuristic.getFactory().size() > optimal.getFactory().size() + universeSize - 2){
+				if(heuristic.getFactory().effectiveSize() > optimal.getFactory().effectiveSize() + universeSize - 2){
 					heuristicZDD = heuristic;
 					optimalZDD = optimal;
 					counterFamily = family;
