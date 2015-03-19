@@ -7,10 +7,12 @@ import java.io.IOException;
 import java.io.StringWriter;
 import java.io.Writer;
 import java.lang.ref.WeakReference;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
@@ -44,9 +46,9 @@ public abstract class DDFactory {
 	private static final int[] LARGE_PRIMES = new int[]{2147481053, 2147481151, 2147482093};
 	
 	/**
-	 * Nodes of the shared graph.
+	 * Map from decision diagram level to existing node pool
 	 */
-	private WeakHashMap<DDNode, WeakReference<DDNode>> ddNodes; 
+	private WeakHashMap<DDNode, WeakReference<DDNode>>[] i2n; 
 	
 	/**
 	 * Weak references to all decision diagrams.
@@ -91,19 +93,21 @@ public abstract class DDFactory {
 	 * @param numVars
 	 * @param varOrdering
 	 */
+	@SuppressWarnings("unchecked")
 	public DDFactory(int[] varOrdering, int operatorCacheSize){
 		// Error checking
 		sanitizeOrdering(varOrdering);
 		this.i2v = new int[varOrdering.length];
 		this.v2i = new int[varOrdering.length];
-		for(int i=0; i < varOrdering.length; i++){
+		this.i2n = new WeakHashMap[i2v.length];
+		for(int i = 0; i < varOrdering.length; i++){
 			i2v[i] = varOrdering[i];
 			v2i[i2v[i]] = i;
+			i2n[i] = new WeakHashMap<DDNode, WeakReference<DDNode>>();
 		}
 		
 		this.LO = new DDNode(-1, null, null);
 		this.HI = new DDNode(-2, null, null);
-		this.ddNodes = new WeakHashMap<DDNode, WeakReference<DDNode>>();
 		this.diagrams = new WeakHashMap<DD, WeakReference<DD>>();
 		this.opCache = new FixedSizeHashMap<DDOpKey, Object>(operatorCacheSize);
 	}
@@ -129,21 +133,80 @@ public abstract class DDFactory {
 		
 		// Same ordering we already have? No work to be done.
 		if(Arrays.equals(i2v, newOrdering)) return;
-		
-		// Create new mappings between order indices and variable labels
-		int[] newI2V = new int[newOrdering.length];
-		int[] newV2I = new int[newOrdering.length];
-		for(int i=0; i < newOrdering.length; i++){
-			newI2V[i] = newOrdering[i];
-			newV2I[newI2V[i]] = i;
+
+		// Empty the operator cache and collect garbage so that the number of nodes
+		// to reorder is minimized.
+		opCache.flush();
+		System.gc();
+
+		// For each position in the new order
+		for(int i = 0; i < v2i.length; ++i){
+			// The variable that should be at this level in the new ordering
+			int desiredVar = newOrdering[i];
+			
+			// The current position >= i of the variable
+			int currentPos = v2i[desiredVar];
+			
+			// Keep swapping up levels until the desired variable is in position i
+			for(int j = currentPos; j > i; --j)
+				swap(j-1);
 		}
-		
-		// TODO create a factory with the new ordering
-		// TODO create correspondence 
-		
-		// TODO the real work
 	}
 	
+	/**
+	 * Swap variables at level i and i++ in this decision diagram.
+	 * @param i
+	 */
+	private void swap(int i){
+		// For all nodes at level i
+		List<WeakReference<DDNode>> levelI = new ArrayList<WeakReference<DDNode>>(i2n[i].values());
+		for(WeakReference<DDNode> ref : levelI){
+			// Remove the node from level i
+			DDNode f = ref.get();
+			i2n[i].remove(f);
+			
+			// Find Shannon cofactors f00, f01, f10, f11 of f with respect to the variable at i+1 in the ordering
+			DDNode f00, f01, f10, f11;
+			// The F0 subtree is rooted at variable at i+1 in the order
+			if(f.lo.var == i2v[i+1]){
+				f00 = f.lo.lo;
+				f01 = f.lo.hi;
+			}else{
+				f00 = f.lo;
+				f01 = f.lo;
+			}
+			// The F1 subtree is rooted at variable at i+1 in the order
+			if(f.hi.var == i2v[i+1]){
+				f10 = f.hi.lo;
+				f11 = f.hi.hi;
+			}else{
+				f10 = f.hi;
+				f11 = f.hi;
+			}
+
+			// TODO what if F is now degenerate?
+			// Overwrite F with new internals (i+1,(i, F00, F10),(i, F01, F11))
+			f.var = i2v[i+1];
+			f.hash = null;
+			f.lo = getNode(i2v[i], f00, f10);
+			f.hi = getNode(i2v[i], f01, f11);
+			i2n[i+1].put(f, ref);
+		}
+		
+		int tmp = i2v[i+1];
+		i2v[i+1] = i2v[i];
+		i2v[i] = tmp;
+		v2i[i2v[i]] = i;
+		v2i[i2v[i+1]] = i+1;
+		WeakHashMap<DDNode, WeakReference<DDNode>> tmpLevel = i2n[i+1];
+		i2n[i+1] = i2n[i];
+		i2n[i] = tmpLevel;
+	}
+	
+	/**
+	 * Check that every variable 0 to length - 1 appears in the ordering exactly once.
+	 * @param ordering
+	 */
 	private void sanitizeOrdering(int[] ordering){
 		int[] counts = new int[ordering.length];
 		for(int i : ordering){
@@ -167,7 +230,10 @@ public abstract class DDFactory {
 	 */
 	public int universeSize(){
 		System.gc();
-		return ddNodes.keySet().size();
+		int size = 0;
+		for(WeakHashMap<DDNode, WeakReference<DDNode>> level : i2n)
+			size += level.keySet().size();
+		return size;
 	}
 	
 	/**
@@ -179,14 +245,13 @@ public abstract class DDFactory {
 	 * @return
 	 */
 	public int effectiveSize(){
-		System.gc();
-
-		int allNodes = ddNodes.keySet().size();
+		int totalNodes = universeSize();
+		
 		// Store the results of our forward BFS
-		Set<DDNode> traversed = new HashSet<DDNode>(allNodes);
+		Set<DDNode> traversed = new HashSet<DDNode>(totalNodes);
 		
 		// Let the frontier initially contain the nodes referred to by decision diagrams
-		Set<DDNode> frontier = new HashSet<DDNode>(allNodes);
+		Set<DDNode> frontier = new HashSet<DDNode>(totalNodes);
 		for(DD diagram : diagrams.keySet()) frontier.add(diagram.ref);
 		
 		// BFS
@@ -231,10 +296,10 @@ public abstract class DDFactory {
 
 		// Node sharing
 		DDNode key = new DDNode(var, lo, hi);
-		WeakReference<DDNode> sharedNode = ddNodes.get(key);
+		WeakReference<DDNode> sharedNode = i2n[v2i[var]].get(key);
 		if(sharedNode == null){
 			sharedNode = new WeakReference<DDNode>(key);
-			ddNodes.put(key, sharedNode);
+			i2n[v2i[var]].put(key, sharedNode);
 		}
 		return sharedNode.get();
 	}

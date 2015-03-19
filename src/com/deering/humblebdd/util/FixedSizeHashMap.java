@@ -34,4 +34,15 @@ public class FixedSizeHashMap<K, V> {
 		keyCache[hash] = key;
 		valCache[hash] = val;
 	}
+	
+	public void flush(){
+		for(int i = 0; i < keyCache.length; ++i){
+			keyCache[i] = null;
+			valCache[i] = null;
+		}
+	}
+	
+	public int size(){
+		return this.keyCache.length;
+	}
 }
